@@ -1949,10 +1949,14 @@ try:
                 key=f"produtos_extras_editor_{st.session_state['reset_saida']}"
             )
 
-            botao_verificar_saida = st.form_submit_button(
-                "Verificar disponibilidade",
-                disabled=st.session_state["bloqueado"]
-            )
+            col_botao_esquerda, col_botao_centro, col_botao_direita = st.columns([1, 1, 1])
+
+            with col_botao_centro:
+                botao_verificar_saida = st.form_submit_button(
+                    "Verificar disponibilidade",
+                    disabled=st.session_state["bloqueado"],
+                    use_container_width=True
+                )
 
         if botao_verificar_saida:
             if not pedido_saida.strip():
@@ -2761,11 +2765,15 @@ try:
                     hide_index=True
                 )
 
-                botao_cancelar_saida = st.button(
-                    "Cancelar saída do pedido",
-                    type="primary",
-                    disabled=st.session_state["bloqueado"]
-                )
+                col_botao_esquerda, col_botao_centro, col_botao_direita = st.columns([1, 1, 1])
+
+                with col_botao_centro:
+                    botao_cancelar_saida = st.button(
+                        "Cancelar saída do pedido",
+                        type="primary",
+                        disabled=st.session_state["bloqueado"],
+                        use_container_width=True
+                    )
 
                 if botao_cancelar_saida and not st.session_state["bloqueado"]:
                     itens_confirmacao = itens_cancelamento_exibir[
