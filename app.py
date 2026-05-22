@@ -43,8 +43,8 @@ PERMISSOES_POR_PERFIL = {
 
 
 PERMISSOES_HISTORICO = {
-    "admin": ["editar_entrada", "cancelar_saida"],
-    "entrada": ["editar_entrada"],
+    "admin": ["excluir_entrada", "cancelar_saida"],
+    "entrada": ["excluir_entrada"],
     "saida": ["cancelar_saida"],
 }
 
@@ -149,7 +149,7 @@ def sair_do_sistema():
         "simulacao_saida",
         "cadastro_processando",
         "edicao_processando",
-        "edicao_entrada_processando",
+        "exclusao_entrada_processando",
         "cancelamento_saida_processando",
         "cancelamento_processando",
     ]
@@ -888,13 +888,11 @@ def registrar_saida_kit(pedido, tipo_saida, tipo_monzi, itens):
     return enviar_para_apps_script(payload)
 
 
-def editar_entrada_historico(id_movimentacao, nova_quantidade, nova_observacao):
+def excluir_entrada_historico(id_movimentacao):
     payload = {
-        "acao": "EDITAR_ENTRADA",
+        "acao": "EXCLUIR_ENTRADA",
         "id_movimentacao": id_movimentacao,
-        "nova_quantidade": nova_quantidade,
-        "nova_observacao": nova_observacao,
-        "atualizado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        "cancelado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     }
 
     return enviar_para_apps_script(payload)
@@ -1001,8 +999,8 @@ if "cadastro_processando" not in st.session_state:
 if "edicao_processando" not in st.session_state:
     st.session_state["edicao_processando"] = None
 
-if "edicao_entrada_processando" not in st.session_state:
-    st.session_state["edicao_entrada_processando"] = None
+if "exclusao_entrada_processando" not in st.session_state:
+    st.session_state["exclusao_entrada_processando"] = None
 
 if "cancelamento_saida_processando" not in st.session_state:
     st.session_state["cancelamento_saida_processando"] = None
@@ -1191,31 +1189,29 @@ if st.session_state["edicao_processando"] is not None:
     st.stop()
 
 
-# PROCESSAMENTO DE EDIÇÃO DE ENTRADA PELO HISTÓRICO
-if st.session_state["edicao_entrada_processando"] is not None:
+# PROCESSAMENTO DE EXCLUSÃO DE ENTRADA PELO HISTÓRICO
+if st.session_state["exclusao_entrada_processando"] is not None:
     bloquear_cliques_interface()
 
-    edicao_entrada = st.session_state["edicao_entrada_processando"]
+    exclusao_entrada = st.session_state["exclusao_entrada_processando"]
 
     st.divider()
-    st.subheader("Processando edição de entrada")
+    st.subheader("Processando exclusão de entrada")
 
     try:
-        with st.spinner("Atualizando entrada e recalculando estoque. Aguarde..."):
-            editar_entrada_historico(
-                id_movimentacao=edicao_entrada["id_movimentacao"],
-                nova_quantidade=edicao_entrada["nova_quantidade"],
-                nova_observacao=edicao_entrada["nova_observacao"]
+        with st.spinner("Excluindo entrada e recalculando estoque. Aguarde..."):
+            excluir_entrada_historico(
+                id_movimentacao=exclusao_entrada["id_movimentacao"]
             )
 
-        st.session_state["mensagem_sucesso"] = "Entrada atualizada com sucesso."
+        st.session_state["mensagem_sucesso"] = "Entrada excluída com sucesso. O estoque foi ajustado."
         st.session_state["reset_historico"] += 1
 
     except Exception as e:
-        st.session_state["mensagem_erro"] = f"Erro ao editar entrada: {e}"
+        st.session_state["mensagem_erro"] = f"Erro ao excluir entrada: {e}"
 
     finally:
-        st.session_state["edicao_entrada_processando"] = None
+        st.session_state["exclusao_entrada_processando"] = None
         st.session_state["bloqueado"] = False
         st.session_state["menu_principal"] = "Histórico"
         st.rerun()
@@ -2457,17 +2453,17 @@ try:
         st.divider()
         st.markdown("### Ações do histórico")
 
-        pode_editar_entrada = usuario_pode_acao_historico("editar_entrada")
+        pode_excluir_entrada = usuario_pode_acao_historico("excluir_entrada")
         pode_cancelar_saida = usuario_pode_acao_historico("cancelar_saida")
 
-        if not pode_editar_entrada and not pode_cancelar_saida:
+        if not pode_excluir_entrada and not pode_cancelar_saida:
             st.info("Seu perfil pode consultar o histórico, mas não possui ações liberadas nesta tela.")
 
-        if pode_editar_entrada:
-            st.markdown("#### Editar entrada")
+        if pode_excluir_entrada:
+            st.markdown("#### Excluir entrada")
             st.caption(
-                "Edite somente movimentações do tipo ENTRADA. "
-                "Ao alterar a quantidade, o estoque do produto é ajustado automaticamente pela diferença."
+                "Exclua somente movimentações do tipo ENTRADA. "
+                "A linha não será apagada da planilha; ela será marcada como ENTRADA_CANCELADA e o estoque será ajustado automaticamente."
             )
 
             entradas = historico[
@@ -2475,11 +2471,11 @@ try:
             ].copy()
 
             if entradas.empty:
-                st.info("Nenhuma entrada encontrada para edição.")
+                st.info("Nenhuma entrada ativa encontrada para exclusão.")
             else:
                 entradas = entradas.sort_values("criado_em", ascending=False)
 
-                entradas["opcao_edicao"] = entradas.apply(
+                entradas["opcao_exclusao"] = entradas.apply(
                     lambda row: (
                         f"{row['id']} - {row['nome']} | "
                         f"Qtd: {row['quantidade']} | "
@@ -2488,48 +2484,49 @@ try:
                     axis=1
                 )
 
-                with st.form(f"form_editar_entrada_historico_{st.session_state['reset_historico']}"):
-                    entrada_selecionada = st.selectbox(
-                        "Movimentação de entrada",
-                        entradas["opcao_edicao"].tolist(),
-                        key=f"entrada_historico_{st.session_state['reset_historico']}"
+                entrada_selecionada = st.selectbox(
+                    "Movimentação de entrada",
+                    entradas["opcao_exclusao"].tolist(),
+                    key=f"entrada_excluir_{st.session_state['reset_historico']}"
+                )
+
+                id_entrada = entrada_selecionada.split(" - ")[0]
+                linha_entrada = entradas[entradas["id"] == id_entrada].iloc[0]
+
+                st.write(f"**Produto:** {linha_entrada['nome']}")
+                st.write(f"**Quantidade que será removida do estoque:** {linha_entrada['quantidade']}")
+                st.write(f"**Data:** {linha_entrada.get('criado_em', '')}")
+
+                if str(linha_entrada.get("observacao", "")).strip():
+                    st.write(f"**Observação:** {linha_entrada['observacao']}")
+
+                st.warning(
+                    "Ao confirmar, esta entrada será marcada como cancelada e a quantidade será retirada do estoque atual."
+                )
+
+                with st.form(f"form_excluir_entrada_historico_{st.session_state['reset_historico']}"):
+                    confirmar_exclusao_entrada = st.checkbox(
+                        f"Confirmo a exclusão da entrada {id_entrada}",
+                        key=f"confirmar_exclusao_entrada_{id_entrada}_{st.session_state['reset_historico']}"
                     )
 
-                    id_entrada = entrada_selecionada.split(" - ")[0]
-                    linha_entrada = entradas[entradas["id"] == id_entrada].iloc[0]
-
-                    st.write(f"**Produto:** {linha_entrada['nome']}")
-                    st.write(f"**Quantidade atual da movimentação:** {linha_entrada['quantidade']}")
-
-                    nova_quantidade = st.number_input(
-                        "Nova quantidade",
-                        min_value=1,
-                        step=1,
-                        value=int(linha_entrada["quantidade"]),
-                        key=f"nova_qtd_entrada_{id_entrada}_{st.session_state['reset_historico']}"
-                    )
-
-                    nova_observacao = st.text_area(
-                        "Nova observação",
-                        value=str(linha_entrada["observacao"]),
-                        key=f"nova_obs_entrada_{id_entrada}_{st.session_state['reset_historico']}"
-                    )
-
-                    botao_editar_entrada = st.form_submit_button(
-                        "Salvar edição da entrada",
+                    botao_excluir_entrada = st.form_submit_button(
+                        "Excluir entrada",
                         disabled=st.session_state["bloqueado"]
                     )
 
-                if botao_editar_entrada and not st.session_state["bloqueado"]:
+                if botao_excluir_entrada and not st.session_state["bloqueado"]:
+                    if not confirmar_exclusao_entrada:
+                        st.error("Marque a confirmação antes de excluir a entrada.")
+                        st.stop()
+
                     st.session_state["bloqueado"] = True
-                    st.session_state["edicao_entrada_processando"] = {
-                        "id_movimentacao": id_entrada,
-                        "nova_quantidade": int(nova_quantidade),
-                        "nova_observacao": nova_observacao.strip()
+                    st.session_state["exclusao_entrada_processando"] = {
+                        "id_movimentacao": id_entrada
                     }
                     st.rerun()
 
-        if pode_editar_entrada and pode_cancelar_saida:
+        if pode_excluir_entrada and pode_cancelar_saida:
             st.divider()
 
         if pode_cancelar_saida:
