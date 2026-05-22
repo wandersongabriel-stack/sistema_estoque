@@ -1486,11 +1486,8 @@ try:
 
 
     with st.sidebar:
-        st.title("Sistema de Estoque")
-        st.caption("Menu principal")
 
         st.caption(f"Usuário: {st.session_state.get('usuario', '')}")
-        st.caption(f"Perfil: {perfil_atual().upper()}")
 
         st.divider()
 
