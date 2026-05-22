@@ -8,6 +8,33 @@ st.set_page_config(
     layout="wide"
 )
 
+
+def aplicar_estilo_botoes_centralizados():
+    st.markdown(
+        """
+        <style>
+            div.stButton {
+                display: flex;
+                justify-content: center;
+            }
+
+            div.stFormSubmitButton {
+                display: flex;
+                justify-content: center;
+            }
+
+            div.stButton > button,
+            div.stFormSubmitButton > button {
+                min-width: 120px;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+aplicar_estilo_botoes_centralizados()
+
 SHEET_URL = st.secrets["SHEET_URL"]
 GID_PRODUTOS = st.secrets["GID_PRODUTOS"]
 GID_MOVIMENTACOES = st.secrets["GID_MOVIMENTACOES"]
@@ -1296,7 +1323,7 @@ if st.session_state["confirmar_entrada"] is not None:
     else:
         st.write("**Observação:** Não informada")
 
-    col_esquerda, col_confirmar, col_cancelar = st.columns([6, 1, 1])
+    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
 
     with col_confirmar:
         confirmar = st.button(
@@ -1341,7 +1368,7 @@ if st.session_state["confirmar_cadastro"] is not None:
     st.write(f"**Unidade:** {cadastro['unidade']}")
     st.write(f"**Estoque mínimo:** {cadastro['estoque_minimo']}")
 
-    col_esquerda, col_confirmar, col_cancelar = st.columns([6, 1, 1])
+    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
 
     with col_confirmar:
         confirmar = st.button(
@@ -1388,7 +1415,7 @@ if st.session_state["confirmar_edicao"] is not None:
     st.write(f"**Estoque mínimo:** {edicao['estoque_minimo']}")
     st.write(f"**Ativo:** {edicao['ativo']}")
 
-    col_esquerda, col_confirmar, col_cancelar = st.columns([6, 1, 1])
+    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
 
     with col_confirmar:
         confirmar = st.button(
@@ -1444,7 +1471,7 @@ if st.session_state["confirmar_exclusao_entrada"] is not None:
     else:
         st.write("**Observação:** Não informada")
 
-    col_esquerda, col_confirmar, col_cancelar = st.columns([6, 1, 1])
+    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
 
     with col_confirmar:
         confirmar = st.button(
@@ -1504,7 +1531,7 @@ if st.session_state["confirmar_cancelamento_saida"] is not None:
             hide_index=True
         )
 
-    col_esquerda, col_confirmar, col_cancelar = st.columns([6, 1, 1])
+    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
 
     with col_confirmar:
         confirmar = st.button(
@@ -1814,7 +1841,7 @@ try:
                     key=f"observacao_entrada_{st.session_state['reset_entrada']}"
                 )
 
-                col_esquerda, col_direita = st.columns([8, 1])
+                col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
 
                 with col_direita:
                     botao_entrada = st.form_submit_button("Registrar entrada")
@@ -2121,7 +2148,7 @@ try:
             else:
                 st.success("Estoque suficiente para esta saída.")
 
-                col_confirmar, col_cancelar, col_vazio = st.columns([1, 1, 6])
+                col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
 
                 with col_confirmar:
                     st.button(
@@ -2211,7 +2238,7 @@ try:
                 key=f"estoque_minimo_cadastro_{st.session_state['reset_cadastro']}"
             )
 
-            col_esquerda, col_direita = st.columns([8, 1])
+            col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
 
             with col_direita:
                 botao_cadastro = st.form_submit_button("Cadastrar")
@@ -2309,7 +2336,7 @@ try:
                     key=f"ativo_edicao_{st.session_state['reset_edicao']}_{codigo_selecionado}"
                 )
 
-                col_esquerda, col_direita = st.columns([8, 1])
+                col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
 
                 with col_direita:
                     botao_edicao = st.form_submit_button("Atualizar")
