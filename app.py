@@ -9,31 +9,30 @@ st.set_page_config(
 )
 
 
-def aplicar_estilo_botoes_centralizados():
-    st.markdown(
-        """
-        <style>
-            div.stButton {
-                display: flex;
-                justify-content: center;
-            }
+# AJUSTE VISUAL DOS BOTÕES
+st.markdown(
+    """
+    <style>
+        div.stButton > button,
+        div.stFormSubmitButton > button {
+            min-height: 3rem;
+            padding: 0.7rem 1.6rem;
+            font-size: 1rem;
+            font-weight: 700;
+            border-radius: 0.6rem;
+        }
 
-            div.stFormSubmitButton {
-                display: flex;
-                justify-content: center;
-            }
-
-            div.stButton > button,
-            div.stFormSubmitButton > button {
-                min-width: 120px;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-aplicar_estilo_botoes_centralizados()
+        section[data-testid="stSidebar"] div.stButton > button {
+            min-height: 2.65rem;
+            padding: 0.55rem 1rem;
+            font-size: 0.95rem;
+            font-weight: 700;
+            border-radius: 0.5rem;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 SHEET_URL = st.secrets["SHEET_URL"]
 GID_PRODUTOS = st.secrets["GID_PRODUTOS"]
@@ -70,8 +69,8 @@ PERMISSOES_POR_PERFIL = {
 
 
 PERMISSOES_HISTORICO = {
-    "admin": ["excluir_entrada", "cancelar_saida"],
-    "entrada": ["excluir_entrada"],
+    "admin": ["editar_entrada", "cancelar_saida"],
+    "entrada": ["editar_entrada"],
     "saida": ["cancelar_saida"],
 }
 
@@ -176,9 +175,7 @@ def sair_do_sistema():
         "simulacao_saida",
         "cadastro_processando",
         "edicao_processando",
-        "confirmar_exclusao_entrada",
-        "confirmar_cancelamento_saida",
-        "exclusao_entrada_processando",
+        "edicao_entrada_processando",
         "cancelamento_saida_processando",
         "cancelamento_processando",
     ]
@@ -917,11 +914,13 @@ def registrar_saida_kit(pedido, tipo_saida, tipo_monzi, itens):
     return enviar_para_apps_script(payload)
 
 
-def excluir_entrada_historico(id_movimentacao):
+def editar_entrada_historico(id_movimentacao, nova_quantidade, nova_observacao):
     payload = {
-        "acao": "EXCLUIR_ENTRADA",
+        "acao": "EDITAR_ENTRADA",
         "id_movimentacao": id_movimentacao,
-        "cancelado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        "nova_quantidade": nova_quantidade,
+        "nova_observacao": nova_observacao,
+        "atualizado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     }
 
     return enviar_para_apps_script(payload)
@@ -1013,12 +1012,6 @@ if "confirmar_cadastro" not in st.session_state:
 if "confirmar_edicao" not in st.session_state:
     st.session_state["confirmar_edicao"] = None
 
-if "confirmar_exclusao_entrada" not in st.session_state:
-    st.session_state["confirmar_exclusao_entrada"] = None
-
-if "confirmar_cancelamento_saida" not in st.session_state:
-    st.session_state["confirmar_cancelamento_saida"] = None
-
 if "entrada_processando" not in st.session_state:
     st.session_state["entrada_processando"] = None
 
@@ -1034,8 +1027,8 @@ if "cadastro_processando" not in st.session_state:
 if "edicao_processando" not in st.session_state:
     st.session_state["edicao_processando"] = None
 
-if "exclusao_entrada_processando" not in st.session_state:
-    st.session_state["exclusao_entrada_processando"] = None
+if "edicao_entrada_processando" not in st.session_state:
+    st.session_state["edicao_entrada_processando"] = None
 
 if "cancelamento_saida_processando" not in st.session_state:
     st.session_state["cancelamento_saida_processando"] = None
@@ -1224,29 +1217,31 @@ if st.session_state["edicao_processando"] is not None:
     st.stop()
 
 
-# PROCESSAMENTO DE EXCLUSÃO DE ENTRADA PELO HISTÓRICO
-if st.session_state["exclusao_entrada_processando"] is not None:
+# PROCESSAMENTO DE EDIÇÃO DE ENTRADA PELO HISTÓRICO
+if st.session_state["edicao_entrada_processando"] is not None:
     bloquear_cliques_interface()
 
-    exclusao_entrada = st.session_state["exclusao_entrada_processando"]
+    edicao_entrada = st.session_state["edicao_entrada_processando"]
 
     st.divider()
-    st.subheader("Processando exclusão de entrada")
+    st.subheader("Processando edição de entrada")
 
     try:
-        with st.spinner("Excluindo entrada e recalculando estoque. Aguarde..."):
-            excluir_entrada_historico(
-                id_movimentacao=exclusao_entrada["id_movimentacao"]
+        with st.spinner("Atualizando entrada e recalculando estoque. Aguarde..."):
+            editar_entrada_historico(
+                id_movimentacao=edicao_entrada["id_movimentacao"],
+                nova_quantidade=edicao_entrada["nova_quantidade"],
+                nova_observacao=edicao_entrada["nova_observacao"]
             )
 
-        st.session_state["mensagem_sucesso"] = "Entrada excluída com sucesso. O estoque foi ajustado."
+        st.session_state["mensagem_sucesso"] = "Entrada atualizada com sucesso."
         st.session_state["reset_historico"] += 1
 
     except Exception as e:
-        st.session_state["mensagem_erro"] = f"Erro ao excluir entrada: {e}"
+        st.session_state["mensagem_erro"] = f"Erro ao editar entrada: {e}"
 
     finally:
-        st.session_state["exclusao_entrada_processando"] = None
+        st.session_state["edicao_entrada_processando"] = None
         st.session_state["bloqueado"] = False
         st.session_state["menu_principal"] = "Histórico"
         st.rerun()
@@ -1323,7 +1318,7 @@ if st.session_state["confirmar_entrada"] is not None:
     else:
         st.write("**Observação:** Não informada")
 
-    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
+    col_esquerda, col_confirmar, col_cancelar = st.columns([6, 1, 1])
 
     with col_confirmar:
         confirmar = st.button(
@@ -1368,7 +1363,7 @@ if st.session_state["confirmar_cadastro"] is not None:
     st.write(f"**Unidade:** {cadastro['unidade']}")
     st.write(f"**Estoque mínimo:** {cadastro['estoque_minimo']}")
 
-    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
+    col_esquerda, col_confirmar, col_cancelar = st.columns([6, 1, 1])
 
     with col_confirmar:
         confirmar = st.button(
@@ -1415,7 +1410,7 @@ if st.session_state["confirmar_edicao"] is not None:
     st.write(f"**Estoque mínimo:** {edicao['estoque_minimo']}")
     st.write(f"**Ativo:** {edicao['ativo']}")
 
-    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
+    col_esquerda, col_confirmar, col_cancelar = st.columns([6, 1, 1])
 
     with col_confirmar:
         confirmar = st.button(
@@ -1441,124 +1436,6 @@ if st.session_state["confirmar_edicao"] is not None:
         st.session_state["cancelamento_processando"] = {
             "chave_confirmacao": "confirmar_edicao",
             "destino": "Edição de Produtos"
-        }
-        st.rerun()
-
-    st.stop()
-
-
-# CONFIRMAÇÃO DE EXCLUSÃO DE ENTRADA
-if st.session_state["confirmar_exclusao_entrada"] is not None:
-    exclusao = st.session_state["confirmar_exclusao_entrada"]
-
-    st.divider()
-    st.subheader("Confirmação de exclusão de entrada")
-
-    st.warning(
-        "Revise as informações abaixo antes de confirmar a exclusão da entrada. "
-        "A linha não será apagada; ela será marcada como ENTRADA_CANCELADA e o estoque será ajustado."
-    )
-
-    st.write(f"**ID da movimentação:** {exclusao['id_movimentacao']}")
-    st.write(f"**Produto:** {exclusao['produto']}")
-    st.write(f"**Quantidade que será removida do estoque:** {exclusao['quantidade']}")
-
-    if exclusao.get("data"):
-        st.write(f"**Data:** {exclusao['data']}")
-
-    if exclusao.get("observacao"):
-        st.write(f"**Observação:** {exclusao['observacao']}")
-    else:
-        st.write("**Observação:** Não informada")
-
-    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
-
-    with col_confirmar:
-        confirmar = st.button(
-            "Confirmar",
-            type="primary",
-            disabled=st.session_state["bloqueado"]
-        )
-
-    with col_cancelar:
-        cancelar = st.button(
-            "Cancelar",
-            disabled=st.session_state["bloqueado"]
-        )
-
-    if confirmar and not st.session_state["bloqueado"]:
-        st.session_state["bloqueado"] = True
-        st.session_state["exclusao_entrada_processando"] = {
-            "id_movimentacao": exclusao["id_movimentacao"]
-        }
-        st.session_state["confirmar_exclusao_entrada"] = None
-        st.rerun()
-
-    if cancelar and not st.session_state["bloqueado"]:
-        st.session_state["bloqueado"] = True
-        st.session_state["cancelamento_processando"] = {
-            "chave_confirmacao": "confirmar_exclusao_entrada",
-            "destino": "Histórico"
-        }
-        st.rerun()
-
-    st.stop()
-
-
-# CONFIRMAÇÃO DE CANCELAMENTO DE SAÍDA
-if st.session_state["confirmar_cancelamento_saida"] is not None:
-    cancelamento_saida = st.session_state["confirmar_cancelamento_saida"]
-
-    st.divider()
-    st.subheader("Confirmação de cancelamento de saída")
-
-    st.warning(
-        "Revise as informações abaixo antes de confirmar o cancelamento da saída. "
-        "As linhas não serão apagadas; elas serão marcadas como canceladas e os itens serão devolvidos ao estoque."
-    )
-
-    st.write(f"**Pedido:** {cancelamento_saida['pedido']}")
-    st.write(f"**Tipo:** {cancelamento_saida['tipo']}")
-    st.write(f"**Quantidade de itens:** {cancelamento_saida['total_itens']}")
-
-    df_itens_cancelamento = pd.DataFrame(cancelamento_saida["itens"])
-
-    if not df_itens_cancelamento.empty:
-        st.markdown("### Itens que serão devolvidos ao estoque")
-        st.dataframe(
-            df_itens_cancelamento,
-            use_container_width=True,
-            hide_index=True
-        )
-
-    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
-
-    with col_confirmar:
-        confirmar = st.button(
-            "Confirmar",
-            type="primary",
-            disabled=st.session_state["bloqueado"]
-        )
-
-    with col_cancelar:
-        cancelar = st.button(
-            "Cancelar",
-            disabled=st.session_state["bloqueado"]
-        )
-
-    if confirmar and not st.session_state["bloqueado"]:
-        st.session_state["bloqueado"] = True
-        st.session_state["cancelamento_saida_processando"] = {
-            "pedido": cancelamento_saida["pedido"]
-        }
-        st.session_state["confirmar_cancelamento_saida"] = None
-        st.rerun()
-
-    if cancelar and not st.session_state["bloqueado"]:
-        st.session_state["bloqueado"] = True
-        st.session_state["cancelamento_processando"] = {
-            "chave_confirmacao": "confirmar_cancelamento_saida",
-            "destino": "Histórico"
         }
         st.rerun()
 
@@ -1841,7 +1718,7 @@ try:
                     key=f"observacao_entrada_{st.session_state['reset_entrada']}"
                 )
 
-                col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
+                col_esquerda, col_direita = st.columns([8, 1])
 
                 with col_direita:
                     botao_entrada = st.form_submit_button("Registrar entrada")
@@ -1949,14 +1826,10 @@ try:
                 key=f"produtos_extras_editor_{st.session_state['reset_saida']}"
             )
 
-            col_botao_esquerda, col_botao_centro, col_botao_direita = st.columns([1, 1, 1])
-
-            with col_botao_centro:
-                botao_verificar_saida = st.form_submit_button(
-                    "Verificar disponibilidade",
-                    disabled=st.session_state["bloqueado"],
-                    use_container_width=True
-                )
+            botao_verificar_saida = st.form_submit_button(
+                "Verificar disponibilidade",
+                disabled=st.session_state["bloqueado"]
+            )
 
         if botao_verificar_saida:
             if not pedido_saida.strip():
@@ -2152,7 +2025,7 @@ try:
             else:
                 st.success("Estoque suficiente para esta saída.")
 
-                col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
+                col_confirmar, col_cancelar, col_vazio = st.columns([1, 1, 6])
 
                 with col_confirmar:
                     st.button(
@@ -2242,7 +2115,7 @@ try:
                 key=f"estoque_minimo_cadastro_{st.session_state['reset_cadastro']}"
             )
 
-            col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
+            col_esquerda, col_direita = st.columns([8, 1])
 
             with col_direita:
                 botao_cadastro = st.form_submit_button("Cadastrar")
@@ -2340,7 +2213,7 @@ try:
                     key=f"ativo_edicao_{st.session_state['reset_edicao']}_{codigo_selecionado}"
                 )
 
-                col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
+                col_esquerda, col_direita = st.columns([8, 1])
 
                 with col_direita:
                     botao_edicao = st.form_submit_button("Atualizar")
@@ -2610,17 +2483,17 @@ try:
         st.divider()
         st.markdown("### Ações do histórico")
 
-        pode_excluir_entrada = usuario_pode_acao_historico("excluir_entrada")
+        pode_editar_entrada = usuario_pode_acao_historico("editar_entrada")
         pode_cancelar_saida = usuario_pode_acao_historico("cancelar_saida")
 
-        if not pode_excluir_entrada and not pode_cancelar_saida:
+        if not pode_editar_entrada and not pode_cancelar_saida:
             st.info("Seu perfil pode consultar o histórico, mas não possui ações liberadas nesta tela.")
 
-        if pode_excluir_entrada:
-            st.markdown("#### Excluir entrada")
+        if pode_editar_entrada:
+            st.markdown("#### Editar entrada")
             st.caption(
-                "Exclua somente movimentações do tipo ENTRADA. "
-                "A linha não será apagada da planilha; ela será marcada como ENTRADA_CANCELADA e o estoque será ajustado automaticamente."
+                "Edite somente movimentações do tipo ENTRADA. "
+                "Ao alterar a quantidade, o estoque do produto é ajustado automaticamente pela diferença."
             )
 
             entradas = historico[
@@ -2628,11 +2501,11 @@ try:
             ].copy()
 
             if entradas.empty:
-                st.info("Nenhuma entrada ativa encontrada para exclusão.")
+                st.info("Nenhuma entrada encontrada para edição.")
             else:
                 entradas = entradas.sort_values("criado_em", ascending=False)
 
-                entradas["opcao_exclusao"] = entradas.apply(
+                entradas["opcao_edicao"] = entradas.apply(
                     lambda row: (
                         f"{row['id']} - {row['nome']} | "
                         f"Qtd: {row['quantidade']} | "
@@ -2641,39 +2514,48 @@ try:
                     axis=1
                 )
 
-                entrada_selecionada = st.selectbox(
-                    "Movimentação de entrada",
-                    entradas["opcao_exclusao"].tolist(),
-                    key=f"entrada_excluir_{st.session_state['reset_historico']}"
-                )
+                with st.form(f"form_editar_entrada_historico_{st.session_state['reset_historico']}"):
+                    entrada_selecionada = st.selectbox(
+                        "Movimentação de entrada",
+                        entradas["opcao_edicao"].tolist(),
+                        key=f"entrada_historico_{st.session_state['reset_historico']}"
+                    )
 
-                id_entrada = entrada_selecionada.split(" - ")[0]
-                linha_entrada = entradas[entradas["id"] == id_entrada].iloc[0]
+                    id_entrada = entrada_selecionada.split(" - ")[0]
+                    linha_entrada = entradas[entradas["id"] == id_entrada].iloc[0]
 
-                st.write(f"**Produto:** {linha_entrada['nome']}")
-                st.write(f"**Quantidade que será removida do estoque:** {linha_entrada['quantidade']}")
-                st.write(f"**Data:** {linha_entrada.get('criado_em', '')}")
+                    st.write(f"**Produto:** {linha_entrada['nome']}")
+                    st.write(f"**Quantidade atual da movimentação:** {linha_entrada['quantidade']}")
 
-                if str(linha_entrada.get("observacao", "")).strip():
-                    st.write(f"**Observação:** {linha_entrada['observacao']}")
+                    nova_quantidade = st.number_input(
+                        "Nova quantidade",
+                        min_value=1,
+                        step=1,
+                        value=int(linha_entrada["quantidade"]),
+                        key=f"nova_qtd_entrada_{id_entrada}_{st.session_state['reset_historico']}"
+                    )
 
-                botao_excluir_entrada = st.button(
-                    "Excluir entrada",
-                    type="primary",
-                    disabled=st.session_state["bloqueado"]
-                )
+                    nova_observacao = st.text_area(
+                        "Nova observação",
+                        value=str(linha_entrada["observacao"]),
+                        key=f"nova_obs_entrada_{id_entrada}_{st.session_state['reset_historico']}"
+                    )
 
-                if botao_excluir_entrada and not st.session_state["bloqueado"]:
-                    st.session_state["confirmar_exclusao_entrada"] = {
+                    botao_editar_entrada = st.form_submit_button(
+                        "Salvar edição da entrada",
+                        disabled=st.session_state["bloqueado"]
+                    )
+
+                if botao_editar_entrada and not st.session_state["bloqueado"]:
+                    st.session_state["bloqueado"] = True
+                    st.session_state["edicao_entrada_processando"] = {
                         "id_movimentacao": id_entrada,
-                        "produto": str(linha_entrada["nome"]),
-                        "quantidade": int(linha_entrada["quantidade"]) if float(linha_entrada["quantidade"]).is_integer() else float(linha_entrada["quantidade"]),
-                        "data": str(linha_entrada.get("criado_em", "")),
-                        "observacao": str(linha_entrada.get("observacao", "")).strip()
+                        "nova_quantidade": int(nova_quantidade),
+                        "nova_observacao": nova_observacao.strip()
                     }
                     st.rerun()
 
-        if pode_excluir_entrada and pode_cancelar_saida:
+        if pode_editar_entrada and pode_cancelar_saida:
             st.divider()
 
         if pode_cancelar_saida:
@@ -2765,34 +2647,30 @@ try:
                     hide_index=True
                 )
 
-                col_botao_esquerda, col_botao_centro, col_botao_direita = st.columns([1, 1, 1])
+                st.warning(
+                    "Ao confirmar, a saída inteira será cancelada. "
+                    "As linhas não serão apagadas; elas serão marcadas como canceladas no histórico."
+                )
 
-                with col_botao_centro:
-                    botao_cancelar_saida = st.button(
+                with st.form(f"form_cancelar_saida_historico_{st.session_state['reset_historico']}"):
+                    confirmar_cancelamento = st.checkbox(
+                        f"Confirmo o cancelamento do pedido {pedido_cancelar}",
+                        key=f"confirmar_cancelamento_{pedido_cancelar}_{st.session_state['reset_historico']}"
+                    )
+
+                    botao_cancelar_saida = st.form_submit_button(
                         "Cancelar saída do pedido",
-                        type="primary",
-                        disabled=st.session_state["bloqueado"],
-                        use_container_width=True
+                        disabled=st.session_state["bloqueado"]
                     )
 
                 if botao_cancelar_saida and not st.session_state["bloqueado"]:
-                    itens_confirmacao = itens_cancelamento_exibir[
-                        [
-                            "ID",
-                            "Código do Produto",
-                            "Produto",
-                            "Tipo",
-                            "Pedido",
-                            "Quantidade a Devolver",
-                            "Data"
-                        ]
-                    ].to_dict("records")
+                    if not confirmar_cancelamento:
+                        st.error("Marque a confirmação antes de cancelar a saída.")
+                        st.stop()
 
-                    st.session_state["confirmar_cancelamento_saida"] = {
-                        "pedido": pedido_cancelar,
-                        "tipo": tipo_saida_cancelar,
-                        "total_itens": len(itens_confirmacao),
-                        "itens": itens_confirmacao
+                    st.session_state["bloqueado"] = True
+                    st.session_state["cancelamento_saida_processando"] = {
+                        "pedido": pedido_cancelar
                     }
                     st.rerun()
 
