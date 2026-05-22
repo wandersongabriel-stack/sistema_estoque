@@ -16,6 +16,149 @@ GID_COMPOSICAO_KITS = st.secrets["GID_COMPOSICAO_KITS"]
 APPS_SCRIPT_URL = st.secrets["APPS_SCRIPT_URL"]
 
 
+
+PERMISSOES_POR_PERFIL = {
+    "admin": [
+        "Consulta de Estoque",
+        "Entrada de Produtos",
+        "Saída de Produtos",
+        "Cadastro de Produtos",
+        "Edição de Produtos",
+        "Consulta de Kits",
+        "Histórico",
+    ],
+    "entrada": [
+        "Consulta de Estoque",
+        "Entrada de Produtos",
+        "Histórico",
+    ],
+    "saida": [
+        "Consulta de Estoque",
+        "Saída de Produtos",
+        "Consulta de Kits",
+        "Histórico",
+    ],
+}
+
+
+PERMISSOES_HISTORICO = {
+    "admin": ["editar_entrada", "cancelar_saida"],
+    "entrada": ["editar_entrada"],
+    "saida": ["cancelar_saida"],
+}
+
+
+def obter_usuarios_configurados():
+    try:
+        return st.secrets["usuarios"]
+    except Exception:
+        return {}
+
+
+def autenticar_usuario(usuario, senha):
+    usuarios = obter_usuarios_configurados()
+    usuario = str(usuario or "").strip()
+    senha = str(senha or "")
+
+    if not usuario or not senha:
+        return None
+
+    try:
+        dados_usuario = usuarios[usuario]
+    except Exception:
+        return None
+
+    senha_correta = str(dados_usuario.get("senha", ""))
+    perfil = str(dados_usuario.get("perfil", "")).strip().lower()
+
+    if senha != senha_correta:
+        return None
+
+    if perfil not in PERMISSOES_POR_PERFIL:
+        return None
+
+    return {
+        "usuario": usuario,
+        "perfil": perfil
+    }
+
+
+def perfil_atual():
+    return str(st.session_state.get("perfil", "")).strip().lower()
+
+
+def usuario_tem_acesso(tela):
+    perfil = perfil_atual()
+    return tela in PERMISSOES_POR_PERFIL.get(perfil, [])
+
+
+def usuario_pode_acao_historico(acao):
+    perfil = perfil_atual()
+    return acao in PERMISSOES_HISTORICO.get(perfil, [])
+
+
+def primeira_tela_permitida():
+    perfil = perfil_atual()
+    telas = PERMISSOES_POR_PERFIL.get(perfil, [])
+    if telas:
+        return telas[0]
+    return "Consulta de Estoque"
+
+
+def tela_login():
+    st.title("Sistema de Estoque")
+    st.subheader("Login")
+
+    with st.form("form_login"):
+        usuario = st.text_input("Usuário")
+        senha = st.text_input("Senha", type="password")
+        entrar = st.form_submit_button("Entrar", type="primary")
+
+    if entrar:
+        dados_login = autenticar_usuario(usuario, senha)
+
+        if dados_login is None:
+            st.error("Usuário ou senha inválidos.")
+            st.stop()
+
+        st.session_state["autenticado"] = True
+        st.session_state["usuario"] = dados_login["usuario"]
+        st.session_state["perfil"] = dados_login["perfil"]
+        st.session_state["menu_principal"] = primeira_tela_permitida()
+        st.rerun()
+
+    st.stop()
+
+
+def exigir_login():
+    if not st.session_state.get("autenticado", False):
+        tela_login()
+
+
+def sair_do_sistema():
+    chaves_para_limpar = [
+        "autenticado",
+        "usuario",
+        "perfil",
+        "confirmar_entrada",
+        "confirmar_cadastro",
+        "confirmar_edicao",
+        "entrada_processando",
+        "saida_processando",
+        "simulacao_saida",
+        "cadastro_processando",
+        "edicao_processando",
+        "edicao_entrada_processando",
+        "cancelamento_saida_processando",
+        "cancelamento_processando",
+    ]
+
+    for chave in chaves_para_limpar:
+        if chave in st.session_state:
+            del st.session_state[chave]
+
+    st.rerun()
+
 def gerar_url_csv(sheet_url, gid):
     base_url = sheet_url.split("/edit")[0]
     return f"{base_url}/export?format=csv&gid={gid}"
@@ -884,6 +1027,21 @@ if "reset_historico" not in st.session_state:
 if "bloqueado" not in st.session_state:
     st.session_state["bloqueado"] = False
 
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+
+if "usuario" not in st.session_state:
+    st.session_state["usuario"] = None
+
+if "perfil" not in st.session_state:
+    st.session_state["perfil"] = None
+
+
+exigir_login()
+
+if not usuario_tem_acesso(st.session_state["menu_principal"]):
+    st.session_state["menu_principal"] = primeira_tela_permitida()
+
 
 def iniciar_processamento_saida(saida):
     st.session_state["bloqueado"] = True
@@ -1330,23 +1488,48 @@ try:
         st.title("Sistema de Estoque")
         st.caption("Menu principal")
 
-        st.markdown("### Estoque")
-        botao_menu("Consulta de Estoque")
-        botao_menu("Entrada de Produtos")
-        botao_menu("Saída de Produtos")
+        st.caption(f"Usuário: {st.session_state.get('usuario', '')}")
+        st.caption(f"Perfil: {perfil_atual().upper()}")
 
-        st.markdown("### Produtos")
-        botao_menu("Cadastro de Produtos")
-        botao_menu("Edição de Produtos")
-        botao_menu("Consulta de Kits")
+        if st.button("Sair", use_container_width=True):
+            sair_do_sistema()
+
+        st.divider()
+
+        st.markdown("### Estoque")
+        if usuario_tem_acesso("Consulta de Estoque"):
+            botao_menu("Consulta de Estoque")
+        if usuario_tem_acesso("Entrada de Produtos"):
+            botao_menu("Entrada de Produtos")
+        if usuario_tem_acesso("Saída de Produtos"):
+            botao_menu("Saída de Produtos")
+
+        if (
+            usuario_tem_acesso("Cadastro de Produtos")
+            or usuario_tem_acesso("Edição de Produtos")
+            or usuario_tem_acesso("Consulta de Kits")
+        ):
+            st.markdown("### Produtos")
+
+        if usuario_tem_acesso("Cadastro de Produtos"):
+            botao_menu("Cadastro de Produtos")
+        if usuario_tem_acesso("Edição de Produtos"):
+            botao_menu("Edição de Produtos")
+        if usuario_tem_acesso("Consulta de Kits"):
+            botao_menu("Consulta de Kits")
 
         st.markdown("### Relatórios")
-        botao_menu("Histórico")
+        if usuario_tem_acesso("Histórico"):
+            botao_menu("Histórico")
 
         st.divider()
         st.caption(f"Tela atual: {st.session_state['menu_principal']}")
 
     aba_atual = st.session_state["menu_principal"]
+
+    if not usuario_tem_acesso(aba_atual):
+        st.error("Você não tem permissão para acessar esta tela.")
+        st.stop()
 
     if aba_atual == "Consulta de Estoque":
         st.subheader("Consulta de Estoque")
@@ -2276,12 +2459,14 @@ try:
         st.divider()
         st.markdown("### Ações do histórico")
 
-        aba_editar_entrada, aba_cancelar_saida = st.tabs([
-            "Editar entrada",
-            "Cancelar saída"
-        ])
+        pode_editar_entrada = usuario_pode_acao_historico("editar_entrada")
+        pode_cancelar_saida = usuario_pode_acao_historico("cancelar_saida")
 
-        with aba_editar_entrada:
+        if not pode_editar_entrada and not pode_cancelar_saida:
+            st.info("Seu perfil pode consultar o histórico, mas não possui ações liberadas nesta tela.")
+
+        if pode_editar_entrada:
+            st.markdown("#### Editar entrada")
             st.caption(
                 "Edite somente movimentações do tipo ENTRADA. "
                 "Ao alterar a quantidade, o estoque do produto é ajustado automaticamente pela diferença."
@@ -2346,7 +2531,11 @@ try:
                     }
                     st.rerun()
 
-        with aba_cancelar_saida:
+        if pode_editar_entrada and pode_cancelar_saida:
+            st.divider()
+
+        if pode_cancelar_saida:
+            st.markdown("#### Cancelar saída")
             st.caption(
                 "Cancele uma saída inteira pelo pedido. "
                 "O sistema devolve todos os produtos daquela TORRE ou ILHA ao estoque e marca as movimentações como canceladas."
@@ -2416,7 +2605,7 @@ try:
                     "criado_em": "Data"
                 })
 
-                st.markdown("#### Itens que serão devolvidos ao estoque")
+                st.markdown("##### Itens que serão devolvidos ao estoque")
 
                 st.dataframe(
                     itens_cancelamento_exibir[
