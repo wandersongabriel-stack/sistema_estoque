@@ -1520,12 +1520,19 @@ try:
         if usuario_tem_acesso("Histórico"):
             botao_menu("Histórico")
 
-        st.divider()
-        st.caption(f"Tela atual: {st.session_state['menu_principal']}")
-
-        st.write("")
-        st.write("")
-        st.divider()
+        st.markdown(
+            f"""
+            <div style="
+                margin-top: 1.25rem;
+                padding-top: 0.25rem;
+                color: rgba(250, 250, 250, 0.65);
+                font-size: 0.85rem;
+            ">
+                Tela atual: <strong>{st.session_state['menu_principal']}</strong>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         if st.button("Sair", use_container_width=True):
             sair_do_sistema()
