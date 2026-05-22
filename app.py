@@ -1518,6 +1518,7 @@ try:
         if usuario_tem_acesso("Histórico"):
             botao_menu("Histórico")
 
+        st.divider()
 
         if st.button("Sair", use_container_width=True):
             sair_do_sistema()
