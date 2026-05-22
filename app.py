@@ -512,10 +512,10 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
             },
             {
                 "chave": "manual_montagem",
-                "grupo": "Manual de montagem",
-                "codigos": ["16"],
+                "grupo": "Manual de montagem ilha",
+                "codigos": ["23"],
                 "padrao": 1,
-                "quantidades_por_unidade": {"16": 1}
+                "quantidades_por_unidade": {"23": 1}
             },
             {
                 "chave": "raspadinha",
