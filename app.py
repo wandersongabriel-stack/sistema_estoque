@@ -1492,9 +1492,6 @@ try:
         st.caption(f"Usuário: {st.session_state.get('usuario', '')}")
         st.caption(f"Perfil: {perfil_atual().upper()}")
 
-        if st.button("Sair", use_container_width=True):
-            sair_do_sistema()
-
         st.divider()
 
         st.markdown("### Estoque")
@@ -1525,6 +1522,13 @@ try:
 
         st.divider()
         st.caption(f"Tela atual: {st.session_state['menu_principal']}")
+
+        st.write("")
+        st.write("")
+        st.divider()
+
+        if st.button("Sair", use_container_width=True):
+            sair_do_sistema()
 
     aba_atual = st.session_state["menu_principal"]
 
