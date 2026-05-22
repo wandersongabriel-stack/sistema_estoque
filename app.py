@@ -1486,6 +1486,7 @@ try:
 
 
     with st.sidebar:
+        st.title("Sistema de Estoque")
 
         st.caption(f"Usuário: {st.session_state.get('usuario', '')}")
 
