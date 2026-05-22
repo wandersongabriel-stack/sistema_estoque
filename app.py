@@ -30,6 +30,7 @@ PERMISSOES_POR_PERFIL = {
     "entrada": [
         "Consulta de Estoque",
         "Entrada de Produtos",
+        "Edição de Produtos",
         "Histórico",
     ],
     "saida": [
