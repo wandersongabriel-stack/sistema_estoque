@@ -23,10 +23,6 @@ def aplicar_estilo_botoes_centralizados():
                 justify-content: center;
             }
 
-            div.stButton > button,
-            div.stFormSubmitButton > button {
-                min-width: 120px;
-            }
         </style>
         """,
         unsafe_allow_html=True
@@ -2657,11 +2653,14 @@ try:
                 if str(linha_entrada.get("observacao", "")).strip():
                     st.write(f"**Observação:** {linha_entrada['observacao']}")
 
-                botao_excluir_entrada = st.button(
-                    "Excluir entrada",
-                    type="primary",
-                    disabled=st.session_state["bloqueado"]
-                )
+                col_excluir_esq, col_excluir_centro, col_excluir_dir = st.columns([4, 1, 4])
+
+                with col_excluir_centro:
+                    botao_excluir_entrada = st.button(
+                        "Excluir entrada",
+                        type="primary",
+                        disabled=st.session_state["bloqueado"]
+                    )
 
                 if botao_excluir_entrada and not st.session_state["bloqueado"]:
                     st.session_state["confirmar_exclusao_entrada"] = {
