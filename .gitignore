@@ -1,0 +1,20 @@
+# Ambiente virtual
+venv/
+.venv/
+
+# Secrets do Streamlit
+.streamlit/secrets.toml
+streamlit/secrets.toml
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Variáveis locais
+.env
