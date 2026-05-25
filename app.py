@@ -2168,14 +2168,7 @@ try:
                 key=f"produtos_extras_editor_{st.session_state['reset_saida']}"
             )
 
-            col_botao_esquerda, col_botao_restaurar, col_botao_confirmar, col_botao_direita = st.columns([2, 1, 1, 2])
-
-            with col_botao_restaurar:
-                botao_restaurar_padrao_saida = st.form_submit_button(
-                    "Restaurar padrão torre/ilha",
-                    disabled=st.session_state["bloqueado"],
-                    use_container_width=True
-                )
+            col_botao_esquerda, col_botao_confirmar, col_botao_restaurar, col_botao_direita = st.columns([2, 1, 1, 2])
 
             with col_botao_confirmar:
                 botao_confirmar_saida = st.form_submit_button(
@@ -2184,31 +2177,14 @@ try:
                     use_container_width=True
                 )
 
+            with col_botao_restaurar:
+                botao_restaurar_padrao_saida = st.form_submit_button(
+                    "Restaurar padrão torre/ilha",
+                    disabled=st.session_state["bloqueado"],
+                    use_container_width=True
+                )
+
         if botao_restaurar_padrao_saida:
-            produtos_extras_rascunho_restaurar = []
-
-            if df_extras_editor is not None and not df_extras_editor.empty:
-                for _, linha_extra in df_extras_editor.iterrows():
-                    produto_extra = str(linha_extra.get("Produto", "") or "").strip()
-                    quantidade_extra = linha_extra.get("Quantidade", 0)
-
-                    try:
-                        quantidade_extra = float(quantidade_extra or 0)
-                    except Exception:
-                        quantidade_extra = 0
-
-                    if not produto_extra or quantidade_extra <= 0:
-                        continue
-
-                    codigo_extra = produto_extra.split(" - ")[0]
-                    nome_extra = produto_extra.split(" - ", 1)[1] if " - " in produto_extra else produto_extra
-
-                    produtos_extras_rascunho_restaurar.append({
-                        "codigo_produto": codigo_extra,
-                        "produto": nome_extra,
-                        "quantidade": int(quantidade_extra) if quantidade_extra.is_integer() else quantidade_extra
-                    })
-
             ajustes_padrao = {
                 definicao["chave"]: int(definicao["padrao"])
                 for definicao in obter_definicoes_checklist(tipo_saida, tipo_monzi)
@@ -2219,7 +2195,7 @@ try:
                 "tipo_saida": tipo_saida,
                 "tipo_monzi": tipo_monzi,
                 "ajustes_checklist": ajustes_padrao,
-                "produtos_extras": produtos_extras_rascunho_restaurar
+                "produtos_extras": []
             }
             st.session_state["erro_saida_form"] = None
             st.session_state["erro_confirmar_saida"] = None
