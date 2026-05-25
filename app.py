@@ -171,6 +171,8 @@ def sair_do_sistema():
         "confirmar_entrada",
         "confirmar_cadastro",
         "confirmar_edicao",
+        "confirmar_saida",
+        "erro_confirmar_saida",
         "entrada_processando",
         "saida_processando",
         "simulacao_saida",
@@ -181,7 +183,6 @@ def sair_do_sistema():
         "exclusao_entrada_processando",
         "cancelamento_saida_processando",
         "cancelamento_processando",
-        "mensagem_erro_saida",
     ]
 
     for chave in chaves_para_limpar:
@@ -1002,9 +1003,6 @@ if "mensagem_sucesso" not in st.session_state:
 if "mensagem_erro" not in st.session_state:
     st.session_state["mensagem_erro"] = None
 
-if "mensagem_erro_saida" not in st.session_state:
-    st.session_state["mensagem_erro_saida"] = None
-
 if "menu_principal" not in st.session_state:
     st.session_state["menu_principal"] = "Consulta de Estoque"
 
@@ -1022,6 +1020,12 @@ if "confirmar_exclusao_entrada" not in st.session_state:
 
 if "confirmar_cancelamento_saida" not in st.session_state:
     st.session_state["confirmar_cancelamento_saida"] = None
+
+if "confirmar_saida" not in st.session_state:
+    st.session_state["confirmar_saida"] = None
+
+if "erro_confirmar_saida" not in st.session_state:
+    st.session_state["erro_confirmar_saida"] = None
 
 if "entrada_processando" not in st.session_state:
     st.session_state["entrada_processando"] = None
@@ -1083,13 +1087,13 @@ if not usuario_tem_acesso(st.session_state["menu_principal"]):
 
 def iniciar_processamento_saida(saida):
     st.session_state["bloqueado"] = True
-    st.session_state["mensagem_erro_saida"] = None
     st.session_state["saida_processando"] = saida
 
 
 def limpar_simulacao_saida():
     st.session_state["simulacao_saida"] = None
-    st.session_state["mensagem_erro_saida"] = None
+    st.session_state["confirmar_saida"] = None
+    st.session_state["erro_confirmar_saida"] = None
     st.session_state["reset_saida"] += 1
     st.session_state["bloqueado"] = False
 
@@ -1146,14 +1150,15 @@ if st.session_state["saida_processando"] is not None:
             )
 
         st.session_state["mensagem_sucesso"] = "Saída registrada com sucesso."
-        st.session_state["mensagem_erro_saida"] = None
         st.session_state["simulacao_saida"] = None
+        st.session_state["confirmar_saida"] = None
+        st.session_state["erro_confirmar_saida"] = None
         st.session_state["reset_saida"] += 1
 
     except Exception as e:
-        st.session_state["mensagem_erro_saida"] = f"Erro ao registrar saída: {e}"
-        st.session_state["mensagem_erro"] = None
-        st.session_state["simulacao_saida"] = saida
+        st.session_state["erro_confirmar_saida"] = f"Erro ao registrar saída: {e}"
+        st.session_state["confirmar_saida"] = saida
+        st.session_state["simulacao_saida"] = None
 
     finally:
         st.session_state["saida_processando"] = None
@@ -1512,6 +1517,136 @@ if st.session_state["confirmar_exclusao_entrada"] is not None:
     st.stop()
 
 
+# CONFIRMAÇÃO DE SAÍDA
+if st.session_state["confirmar_saida"] is not None:
+    saida = st.session_state["confirmar_saida"]
+
+    st.divider()
+    st.subheader("Confirmação de saída")
+
+    st.info("Revise as informações abaixo antes de confirmar a baixa no estoque.")
+
+    st.write(f"**Pedido:** {saida['pedido']}")
+    st.write(f"**Saída:** {saida['tipo_saida']}")
+    st.write(f"**Tipo de Monzi:** {saida['tipo_monzi']}")
+
+    df_saida_confirmacao = pd.DataFrame(saida["itens"])
+
+    possui_insuficiente = False
+    if not df_saida_confirmacao.empty and "status" in df_saida_confirmacao.columns:
+        possui_insuficiente = (
+            df_saida_confirmacao["status"].astype(str).str.upper() == "INSUFICIENTE"
+        ).any()
+
+    st.markdown("### Itens que serão baixados")
+
+    if df_saida_confirmacao.empty:
+        st.warning("Nenhum item encontrado para esta saída.")
+    else:
+        df_confirmacao_exibir = df_saida_confirmacao.rename(columns={
+            "codigo_produto": "Código do Produto",
+            "produto": "Produto",
+            "unidade": "Unidade",
+            "quantidade": "Quantidade Necessária",
+            "estoque_atual": "Estoque Atual",
+            "saldo_apos_saida": "Saldo Após Saída",
+            "status": "Status"
+        })
+
+        colunas_confirmacao = [
+            "Código do Produto",
+            "Produto",
+            "Quantidade Necessária",
+            "Unidade",
+            "Estoque Atual",
+            "Saldo Após Saída",
+            "Status"
+        ]
+
+        colunas_confirmacao = [
+            coluna for coluna in colunas_confirmacao
+            if coluna in df_confirmacao_exibir.columns
+        ]
+
+        def colorir_status_confirmacao(valor):
+            valor = str(valor).upper()
+
+            if valor == "INSUFICIENTE":
+                return "background-color: #7f1d1d; color: white; font-weight: 700;"
+
+            if valor == "OK":
+                return "background-color: #14532d; color: white; font-weight: 700;"
+
+            return ""
+
+        if "Status" in df_confirmacao_exibir.columns:
+            tabela_confirmacao = df_confirmacao_exibir[colunas_confirmacao].style.map(
+                colorir_status_confirmacao,
+                subset=["Status"]
+            )
+        else:
+            tabela_confirmacao = df_confirmacao_exibir[colunas_confirmacao]
+
+        st.dataframe(
+            tabela_confirmacao,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    if saida.get("produtos_extras"):
+        st.markdown("### Produtos extras")
+        df_extras_confirmacao = pd.DataFrame(saida["produtos_extras"])
+        if not df_extras_confirmacao.empty:
+            df_extras_confirmacao = df_extras_confirmacao.rename(columns={
+                "codigo_produto": "Código do Produto",
+                "produto": "Produto",
+                "quantidade": "Quantidade"
+            })
+            st.dataframe(
+                df_extras_confirmacao[["Código do Produto", "Produto", "Quantidade"]],
+                use_container_width=True,
+                hide_index=True
+            )
+
+    if st.session_state.get("erro_confirmar_saida"):
+        st.error(st.session_state["erro_confirmar_saida"])
+
+    if possui_insuficiente:
+        st.error(
+            "Não é possível confirmar esta saída. "
+            "Existem itens com estoque insuficiente."
+        )
+
+    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
+
+    with col_confirmar:
+        confirmar = st.button(
+            "Confirmar",
+            type="primary",
+            disabled=st.session_state["bloqueado"] or possui_insuficiente or df_saida_confirmacao.empty
+        )
+
+    with col_cancelar:
+        cancelar = st.button(
+            "Cancelar",
+            disabled=st.session_state["bloqueado"]
+        )
+
+    if confirmar and not st.session_state["bloqueado"]:
+        st.session_state["bloqueado"] = True
+        st.session_state["saida_processando"] = saida
+        st.session_state["erro_confirmar_saida"] = None
+        st.rerun()
+
+    if cancelar and not st.session_state["bloqueado"]:
+        st.session_state["confirmar_saida"] = None
+        st.session_state["erro_confirmar_saida"] = None
+        st.session_state["menu_principal"] = "Saída de Produtos"
+        st.rerun()
+
+    st.stop()
+
+
 # CONFIRMAÇÃO DE CANCELAMENTO DE SAÍDA
 if st.session_state["confirmar_cancelamento_saida"] is not None:
     cancelamento_saida = st.session_state["confirmar_cancelamento_saida"]
@@ -1578,12 +1713,8 @@ if st.session_state["mensagem_sucesso"]:
     st.session_state["mensagem_sucesso"] = None
 
 if st.session_state["mensagem_erro"]:
-    if st.session_state.get("menu_principal") == "Saída de Produtos" and st.session_state.get("simulacao_saida") is not None:
-        st.session_state["mensagem_erro_saida"] = st.session_state["mensagem_erro"]
-        st.session_state["mensagem_erro"] = None
-    else:
-        st.error(st.session_state["mensagem_erro"])
-        st.session_state["mensagem_erro"] = None
+    st.error(st.session_state["mensagem_erro"])
+    st.session_state["mensagem_erro"] = None
 
 
 try:
@@ -1963,14 +2094,14 @@ try:
             col_botao_esquerda, col_botao_centro, col_botao_direita = st.columns([1, 1, 1])
 
             with col_botao_centro:
-                botao_verificar_saida = st.form_submit_button(
-                    "Verificar disponibilidade",
+                botao_confirmar_saida = st.form_submit_button(
+                    "Confirmar saída",
                     disabled=st.session_state["bloqueado"],
                     use_container_width=True
                 )
 
-        if botao_verificar_saida:
-            st.session_state["mensagem_erro_saida"] = None
+        if botao_confirmar_saida:
+            st.session_state["erro_confirmar_saida"] = None
 
             if not pedido_saida.strip():
                 st.error("Informe o número do pedido.")
@@ -2029,9 +2160,7 @@ try:
                 st.warning("Nenhum item será baixado com os ajustes informados.")
                 st.stop()
 
-            st.session_state["mensagem_erro_saida"] = None
-
-            st.session_state["simulacao_saida"] = {
+            st.session_state["confirmar_saida"] = {
                 "pedido": pedido_saida.strip(),
                 "tipo_saida": tipo_saida,
                 "tipo_monzi": tipo_monzi,
@@ -2039,199 +2168,8 @@ try:
                 "produtos_extras": produtos_extras,
                 "itens": df_saida.to_dict("records")
             }
-
-        simulacao_saida = st.session_state["simulacao_saida"]
-
-        if simulacao_saida is not None:
-            df_saida = pd.DataFrame(simulacao_saida["itens"])
-            tipo_saida_simulacao = simulacao_saida.get("tipo_saida", "TORRE")
-            ajustes_checklist_simulacao = simulacao_saida.get("ajustes_checklist", {})
-            produtos_extras_simulacao = simulacao_saida.get("produtos_extras", [])
-
-            possui_insuficiente = (
-                df_saida["status"].astype(str).str.upper() == "INSUFICIENTE"
-            ).any()
-
-            st.markdown("### Resultado da simulação")
-
-            st.write(f"**Pedido:** {simulacao_saida['pedido']}")
-            st.write(f"**Saída:** {tipo_saida_simulacao}")
-            st.write(f"**Tipo de Monzi:** {simulacao_saida['tipo_monzi']}")
-
-            st.markdown(f"### Checklist da {str(tipo_saida_simulacao).lower()}")
-
-            def verificar_status_grupo(codigos_produtos):
-                itens_grupo = df_saida[
-                    df_saida["codigo_produto"].astype(str).isin(
-                        [str(codigo) for codigo in codigos_produtos]
-                    )
-                ]
-
-                if itens_grupo.empty:
-                    return "OK"
-
-                possui_item_insuficiente = (
-                    itens_grupo["status"].astype(str).str.upper() == "INSUFICIENTE"
-                ).any()
-
-                if possui_item_insuficiente:
-                    return "PENDENTE"
-
-                return "OK"
-
-            checklist = []
-
-            for definicao in obter_definicoes_checklist(tipo_saida_simulacao, simulacao_saida["tipo_monzi"]):
-                checklist.append({
-                    "Grupo": definicao["grupo"],
-                    "Quantidade": ajustes_checklist_simulacao.get(definicao["chave"], definicao["padrao"]),
-                    "Status": verificar_status_grupo(definicao["codigos"])
-                })
-
-            df_checklist = pd.DataFrame(checklist)
-
-            def colorir_status_checklist(valor):
-                valor = str(valor).upper()
-
-                if valor == "PENDENTE":
-                    return "background-color: #7f1d1d; color: white; font-weight: 700;"
-
-                if valor == "OK":
-                    return "background-color: #14532d; color: white; font-weight: 700;"
-
-                return ""
-
-            tabela_checklist = df_checklist.style.map(
-                colorir_status_checklist,
-                subset=["Status"]
-            )
-
-            st.dataframe(
-                tabela_checklist,
-                use_container_width=True,
-                hide_index=True
-            )
-
-            if produtos_extras_simulacao:
-                st.markdown("### Produtos extras")
-                df_extras = pd.DataFrame(produtos_extras_simulacao)
-                df_extras = df_extras.rename(columns={
-                    "codigo_produto": "Código do Produto",
-                    "produto": "Produto",
-                    "quantidade": "Quantidade"
-                })
-                st.dataframe(
-                    df_extras[["Código do Produto", "Produto", "Quantidade"]],
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-            if possui_insuficiente:
-                st.error(
-                    "Não é possível registrar esta saída. "
-                    "Existem itens com estoque insuficiente."
-                )
-
-                st.markdown("### Itens com pendência")
-
-                df_pendencias = df_saida[
-                    df_saida["status"].astype(str).str.upper() == "INSUFICIENTE"
-                ].copy()
-
-                df_pendencias = df_pendencias.rename(columns={
-                    "codigo_produto": "Código do Produto",
-                    "produto": "Produto",
-                    "unidade": "Unidade",
-                    "quantidade": "Quantidade Necessária",
-                    "estoque_atual": "Estoque Atual",
-                    "saldo_apos_saida": "Saldo Após Saída",
-                    "status": "Status"
-                })
-
-                st.dataframe(
-                    df_pendencias[
-                        [
-                            "Código do Produto",
-                            "Produto",
-                            "Quantidade Necessária",
-                            "Unidade",
-                            "Estoque Atual",
-                            "Saldo Após Saída",
-                            "Status"
-                        ]
-                    ],
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-            else:
-                st.success("Estoque suficiente para esta saída.")
-
-                erro_saida_atual = st.session_state.get("mensagem_erro_saida")
-                if erro_saida_atual:
-                    st.error(erro_saida_atual)
-                    st.info("Revise o número do pedido e clique em Verificar disponibilidade novamente antes de confirmar.")
-
-                col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
-
-                with col_confirmar:
-                    st.button(
-                        "Confirmar saída",
-                        type="primary",
-                        on_click=iniciar_processamento_saida,
-                        args=(simulacao_saida,),
-                        disabled=st.session_state["bloqueado"] or bool(st.session_state.get("mensagem_erro_saida"))
-                    )
-
-                with col_cancelar:
-                    st.button(
-                        "Cancelar",
-                        on_click=limpar_simulacao_saida,
-                        disabled=st.session_state["bloqueado"]
-                    )
-
-            with st.expander("Ver detalhes técnicos da baixa"):
-                df_tecnico = df_saida.rename(columns={
-                    "codigo_produto": "Código do Produto",
-                    "produto": "Produto",
-                    "unidade": "Unidade",
-                    "quantidade": "Quantidade Necessária",
-                    "estoque_atual": "Estoque Atual",
-                    "saldo_apos_saida": "Saldo Após Saída",
-                    "status": "Status"
-                })
-
-                def colorir_status_saida(valor):
-                    valor = str(valor).upper()
-
-                    if valor == "INSUFICIENTE":
-                        return "background-color: #7f1d1d; color: white; font-weight: 700;"
-
-                    if valor == "OK":
-                        return "background-color: #14532d; color: white; font-weight: 700;"
-
-                    return ""
-
-                tabela_saida = df_tecnico[
-                    [
-                        "Código do Produto",
-                        "Produto",
-                        "Quantidade Necessária",
-                        "Unidade",
-                        "Estoque Atual",
-                        "Saldo Após Saída",
-                        "Status"
-                    ]
-                ].style.map(
-                    colorir_status_saida,
-                    subset=["Status"]
-                )
-
-                st.dataframe(
-                    tabela_saida,
-                    use_container_width=True,
-                    hide_index=True
-                )
+            st.session_state["simulacao_saida"] = None
+            st.rerun()
 
     elif aba_atual == "Cadastro de Produtos":
         st.subheader("Cadastro de Produtos")
