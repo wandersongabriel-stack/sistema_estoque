@@ -37,6 +37,77 @@ def aplicar_estilo_botoes_centralizados():
 
 aplicar_estilo_botoes_centralizados()
 
+
+TEMPO_ALERTA_MS = 6000
+
+
+def exibir_alerta_temporario(mensagem, tipo="info", duracao_ms=TEMPO_ALERTA_MS):
+    mensagem = str(mensagem or "").strip()
+
+    if not mensagem:
+        return
+
+    estilos = {
+        "success": {
+            "background": "#0f5132",
+            "color": "#d1e7dd",
+            "border": "#198754",
+        },
+        "error": {
+            "background": "#3f1d26",
+            "color": "#ffb3c1",
+            "border": "#842029",
+        },
+        "warning": {
+            "background": "#4d3b12",
+            "color": "#ffe8a1",
+            "border": "#997404",
+        },
+        "info": {
+            "background": "#16324f",
+            "color": "#cfe2ff",
+            "border": "#084298",
+        },
+    }
+
+    estilo = estilos.get(tipo, estilos["info"])
+    mensagem_segura = html.escape(mensagem)
+    alerta_id = f"alerta_{abs(hash((mensagem, tipo, datetime.now().timestamp())))}"
+    duracao_segundos = max(float(duracao_ms) / 1000, 1)
+
+    st.markdown(
+        f"""
+        <style>
+            @keyframes esconder_{alerta_id} {{
+                0% {{ opacity: 1; visibility: visible; }}
+                80% {{ opacity: 1; visibility: visible; }}
+                100% {{ opacity: 0; visibility: hidden; }}
+            }}
+
+            #{alerta_id} {{
+                position: fixed;
+                top: 0.75rem;
+                left: 50%;
+                transform: translateX(-50%);
+                width: min(1100px, calc(100vw - 2rem));
+                z-index: 999999;
+                background-color: {estilo["background"]};
+                color: {estilo["color"]};
+                border: 1px solid {estilo["border"]};
+                border-radius: 0.5rem;
+                padding: 0.9rem 1rem;
+                font-weight: 600;
+                box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.35);
+                pointer-events: none;
+                animation: esconder_{alerta_id} {duracao_segundos}s forwards;
+            }}
+        </style>
+
+        <div id="{alerta_id}">{mensagem_segura}</div>
+        """,
+        unsafe_allow_html=True
+    )
+
 SHEET_URL = st.secrets["SHEET_URL"]
 GID_PRODUTOS = st.secrets["GID_PRODUTOS"]
 GID_MOVIMENTACOES = st.secrets["GID_MOVIMENTACOES"]
@@ -148,7 +219,7 @@ def tela_login():
         dados_login = autenticar_usuario(usuario, senha)
 
         if dados_login is None:
-            st.error("Usuário ou senha inválidos.")
+            exibir_alerta_temporario("Usuário ou senha inválidos.", tipo="error")
             st.stop()
 
         st.session_state["autenticado"] = True
@@ -1703,9 +1774,10 @@ if st.session_state["confirmar_saida"] is not None:
             )
 
     if possui_insuficiente:
-        st.error(
+        exibir_alerta_temporario(
             "Não é possível confirmar esta saída. "
-            "Existem itens com estoque insuficiente."
+            "Existem itens com estoque insuficiente.",
+            tipo="error"
         )
 
     col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
@@ -1802,68 +1874,17 @@ if st.session_state["confirmar_cancelamento_saida"] is not None:
 
 # MENSAGENS
 if st.session_state["mensagem_sucesso"]:
-    mensagem_sucesso_atual = str(st.session_state["mensagem_sucesso"])
-
-    if st.session_state.get("rolar_topo_apos_sucesso", False):
-        mensagem_segura = html.escape(mensagem_sucesso_atual)
-
-        st.markdown(
-            f"""
-            <div style="
-                position: fixed;
-                top: 0.75rem;
-                left: 50%;
-                transform: translateX(-50%);
-                width: min(1100px, calc(100vw - 2rem));
-                z-index: 999999;
-                background-color: #0f5132;
-                color: #d1e7dd;
-                border: 1px solid #198754;
-                border-radius: 0.5rem;
-                padding: 0.9rem 1rem;
-                font-weight: 600;
-                box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.35);
-            ">
-                {mensagem_segura}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        components.html(
-            """
-            <script>
-                const doc = window.parent.document;
-                const seletores = [
-                    'section[data-testid="stAppViewContainer"]',
-                    'div[data-testid="stAppViewContainer"]',
-                    'div[data-testid="stVerticalBlock"]',
-                    'main',
-                    '.main'
-                ];
-
-                window.parent.scrollTo(0, 0);
-
-                seletores.forEach((seletor) => {
-                    doc.querySelectorAll(seletor).forEach((elemento) => {
-                        try {
-                            elemento.scrollTo({ top: 0, behavior: 'smooth' });
-                            elemento.scrollTop = 0;
-                        } catch (erro) {}
-                    });
-                });
-            </script>
-            """,
-            height=0
-        )
-
-        st.session_state["rolar_topo_apos_sucesso"] = False
-
-    st.success(mensagem_sucesso_atual)
+    exibir_alerta_temporario(
+        st.session_state["mensagem_sucesso"],
+        tipo="success"
+    )
     st.session_state["mensagem_sucesso"] = None
 
 if st.session_state["mensagem_erro"]:
-    st.error(st.session_state["mensagem_erro"])
+    exibir_alerta_temporario(
+        st.session_state["mensagem_erro"],
+        tipo="error"
+    )
     st.session_state["mensagem_erro"] = None
 
 
@@ -1967,7 +1988,7 @@ try:
     aba_atual = st.session_state["menu_principal"]
 
     if not usuario_tem_acesso(aba_atual):
-        st.error("Você não tem permissão para acessar esta tela.")
+        exibir_alerta_temporario("Você não tem permissão para acessar esta tela.", tipo="error")
         st.stop()
 
     if aba_atual == "Consulta de Estoque":
@@ -2411,7 +2432,7 @@ try:
                 }
 
         if st.session_state.get("erro_saida_form"):
-            st.error(st.session_state["erro_saida_form"])
+            exibir_alerta_temporario(st.session_state["erro_saida_form"], tipo="error")
 
     elif aba_atual == "Cadastro de Produtos":
         st.subheader("Cadastro de Produtos")
@@ -3005,5 +3026,5 @@ try:
                     st.rerun()
 
 except Exception as e:
-    st.error("Erro ao carregar ou registrar dados.")
+    exibir_alerta_temporario("Erro ao carregar ou registrar dados.", tipo="error")
     st.exception(e)
