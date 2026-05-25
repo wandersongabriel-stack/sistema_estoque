@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import requests
 from datetime import datetime
@@ -900,6 +901,31 @@ def adicionar_produtos_extras(df_saida, produtos_extras, produtos):
     return df_saida
 
 
+def formatar_numero_exibicao(valor):
+    try:
+        if pd.isna(valor):
+            return ""
+
+        numero = float(valor)
+
+        if numero.is_integer():
+            return str(int(numero))
+
+        return str(numero).rstrip("0").rstrip(".")
+    except Exception:
+        return valor
+
+
+def formatar_colunas_numericas_exibicao(df, colunas):
+    df = df.copy()
+
+    for coluna in colunas:
+        if coluna in df.columns:
+            df[coluna] = df[coluna].apply(formatar_numero_exibicao)
+
+    return df
+
+
 def enviar_para_apps_script(payload):
     resposta = requests.post(APPS_SCRIPT_URL, json=payload, timeout=20)
 
@@ -1043,6 +1069,9 @@ if "mensagem_sucesso" not in st.session_state:
 
 if "mensagem_erro" not in st.session_state:
     st.session_state["mensagem_erro"] = None
+
+if "rolar_topo_apos_sucesso" not in st.session_state:
+    st.session_state["rolar_topo_apos_sucesso"] = False
 
 if "menu_principal" not in st.session_state:
     st.session_state["menu_principal"] = "Consulta de Estoque"
@@ -1199,6 +1228,7 @@ if st.session_state["saida_processando"] is not None:
             )
 
         st.session_state["mensagem_sucesso"] = "Saída registrada com sucesso."
+        st.session_state["rolar_topo_apos_sucesso"] = True
         st.session_state["simulacao_saida"] = None
         st.session_state["confirmar_saida"] = None
         st.session_state["erro_confirmar_saida"] = None
@@ -1621,6 +1651,11 @@ if st.session_state["confirmar_saida"] is not None:
             if coluna in df_confirmacao_exibir.columns
         ]
 
+        df_confirmacao_exibir = formatar_colunas_numericas_exibicao(
+            df_confirmacao_exibir,
+            ["Quantidade Necessária", "Estoque Atual", "Saldo Após Saída"]
+        )
+
         def colorir_status_confirmacao(valor):
             valor = str(valor).upper()
 
@@ -1655,6 +1690,11 @@ if st.session_state["confirmar_saida"] is not None:
                 "produto": "Produto",
                 "quantidade": "Quantidade"
             })
+            df_extras_confirmacao = formatar_colunas_numericas_exibicao(
+                df_extras_confirmacao,
+                ["Quantidade"]
+            )
+
             st.dataframe(
                 df_extras_confirmacao[["Código do Produto", "Produto", "Quantidade"]],
                 use_container_width=True,
@@ -1762,6 +1802,18 @@ if st.session_state["confirmar_cancelamento_saida"] is not None:
 # MENSAGENS
 if st.session_state["mensagem_sucesso"]:
     st.success(st.session_state["mensagem_sucesso"])
+
+    if st.session_state.get("rolar_topo_apos_sucesso", False):
+        components.html(
+            """
+            <script>
+                window.parent.scrollTo({ top: 0, behavior: 'smooth' });
+            </script>
+            """,
+            height=0
+        )
+        st.session_state["rolar_topo_apos_sucesso"] = False
+
     st.session_state["mensagem_sucesso"] = None
 
 if st.session_state["mensagem_erro"]:
@@ -2633,6 +2685,11 @@ try:
                     "saldo_apos_saida": "Saldo Após Saída",
                     "status": "Status"
                 })
+
+                df_completo = formatar_colunas_numericas_exibicao(
+                    df_completo,
+                    ["Quantidade Necessária", "Estoque Atual", "Saldo Após Saída"]
+                )
 
                 st.dataframe(
                     df_completo[
