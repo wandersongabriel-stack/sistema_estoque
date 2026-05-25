@@ -174,6 +174,7 @@ def sair_do_sistema():
         "entrada_processando",
         "saida_processando",
         "simulacao_saida",
+        "mensagem_erro_saida",
         "cadastro_processando",
         "edicao_processando",
         "confirmar_exclusao_entrada",
@@ -668,7 +669,7 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
         },
         {
             "chave": "manual_montagem",
-            "grupo": "Manual de montagem",
+            "grupo": "Manual de montagem torre",
             "codigos": ["16"],
             "padrao": 1,
             "quantidades_por_unidade": {"16": 1}
@@ -1001,6 +1002,9 @@ if "mensagem_sucesso" not in st.session_state:
 if "mensagem_erro" not in st.session_state:
     st.session_state["mensagem_erro"] = None
 
+if "mensagem_erro_saida" not in st.session_state:
+    st.session_state["mensagem_erro_saida"] = None
+
 if "menu_principal" not in st.session_state:
     st.session_state["menu_principal"] = "Consulta de Estoque"
 
@@ -1078,12 +1082,17 @@ if not usuario_tem_acesso(st.session_state["menu_principal"]):
 
 
 def iniciar_processamento_saida(saida):
+    if st.session_state.get("bloqueado"):
+        return
+
+    st.session_state["mensagem_erro_saida"] = None
     st.session_state["bloqueado"] = True
     st.session_state["saida_processando"] = saida
 
 
 def limpar_simulacao_saida():
     st.session_state["simulacao_saida"] = None
+    st.session_state["mensagem_erro_saida"] = None
     st.session_state["reset_saida"] += 1
     st.session_state["bloqueado"] = False
 
@@ -1140,11 +1149,12 @@ if st.session_state["saida_processando"] is not None:
             )
 
         st.session_state["mensagem_sucesso"] = "Saída registrada com sucesso."
+        st.session_state["mensagem_erro_saida"] = None
         st.session_state["simulacao_saida"] = None
         st.session_state["reset_saida"] += 1
 
     except Exception as e:
-        st.session_state["mensagem_erro"] = f"Erro ao registrar saída: {e}"
+        st.session_state["mensagem_erro_saida"] = f"Erro ao registrar saída: {e}"
         st.session_state["simulacao_saida"] = saida
 
     finally:
@@ -1958,6 +1968,8 @@ try:
                 )
 
         if botao_verificar_saida:
+            st.session_state["mensagem_erro_saida"] = None
+
             if not pedido_saida.strip():
                 st.error("Informe o número do pedido.")
                 st.stop()
@@ -2150,6 +2162,9 @@ try:
 
             else:
                 st.success("Estoque suficiente para esta saída.")
+
+                if st.session_state.get("mensagem_erro_saida"):
+                    st.error(st.session_state["mensagem_erro_saida"])
 
                 col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
 
