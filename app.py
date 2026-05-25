@@ -174,7 +174,6 @@ def sair_do_sistema():
         "entrada_processando",
         "saida_processando",
         "simulacao_saida",
-        "mensagem_erro_saida",
         "cadastro_processando",
         "edicao_processando",
         "confirmar_exclusao_entrada",
@@ -182,6 +181,7 @@ def sair_do_sistema():
         "exclusao_entrada_processando",
         "cancelamento_saida_processando",
         "cancelamento_processando",
+        "mensagem_erro_saida",
     ]
 
     for chave in chaves_para_limpar:
@@ -1082,11 +1082,8 @@ if not usuario_tem_acesso(st.session_state["menu_principal"]):
 
 
 def iniciar_processamento_saida(saida):
-    if st.session_state.get("bloqueado"):
-        return
-
-    st.session_state["mensagem_erro_saida"] = None
     st.session_state["bloqueado"] = True
+    st.session_state["mensagem_erro_saida"] = None
     st.session_state["saida_processando"] = saida
 
 
@@ -1155,6 +1152,7 @@ if st.session_state["saida_processando"] is not None:
 
     except Exception as e:
         st.session_state["mensagem_erro_saida"] = f"Erro ao registrar saída: {e}"
+        st.session_state["mensagem_erro"] = None
         st.session_state["simulacao_saida"] = saida
 
     finally:
@@ -1580,8 +1578,12 @@ if st.session_state["mensagem_sucesso"]:
     st.session_state["mensagem_sucesso"] = None
 
 if st.session_state["mensagem_erro"]:
-    st.error(st.session_state["mensagem_erro"])
-    st.session_state["mensagem_erro"] = None
+    if st.session_state.get("menu_principal") == "Saída de Produtos" and st.session_state.get("simulacao_saida") is not None:
+        st.session_state["mensagem_erro_saida"] = st.session_state["mensagem_erro"]
+        st.session_state["mensagem_erro"] = None
+    else:
+        st.error(st.session_state["mensagem_erro"])
+        st.session_state["mensagem_erro"] = None
 
 
 try:
@@ -2027,6 +2029,8 @@ try:
                 st.warning("Nenhum item será baixado com os ajustes informados.")
                 st.stop()
 
+            st.session_state["mensagem_erro_saida"] = None
+
             st.session_state["simulacao_saida"] = {
                 "pedido": pedido_saida.strip(),
                 "tipo_saida": tipo_saida,
@@ -2163,8 +2167,10 @@ try:
             else:
                 st.success("Estoque suficiente para esta saída.")
 
-                if st.session_state.get("mensagem_erro_saida"):
-                    st.error(st.session_state["mensagem_erro_saida"])
+                erro_saida_atual = st.session_state.get("mensagem_erro_saida")
+                if erro_saida_atual:
+                    st.error(erro_saida_atual)
+                    st.info("Revise o número do pedido e clique em Verificar disponibilidade novamente antes de confirmar.")
 
                 col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
 
@@ -2174,7 +2180,7 @@ try:
                         type="primary",
                         on_click=iniciar_processamento_saida,
                         args=(simulacao_saida,),
-                        disabled=st.session_state["bloqueado"]
+                        disabled=st.session_state["bloqueado"] or bool(st.session_state.get("mensagem_erro_saida"))
                     )
 
                 with col_cancelar:
