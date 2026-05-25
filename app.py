@@ -173,6 +173,8 @@ def sair_do_sistema():
         "confirmar_edicao",
         "confirmar_saida",
         "erro_confirmar_saida",
+        "erro_saida_form",
+        "rascunho_saida",
         "entrada_processando",
         "saida_processando",
         "simulacao_saida",
@@ -301,6 +303,45 @@ def produto_nome_ja_existe(produtos, nome, codigo_ignorar=None):
     )
 
     return nome_comparacao in nomes_existentes
+
+
+
+def pedido_saida_ja_existe(movimentacoes, pedido):
+    pedido_comparacao = str(pedido or "").strip().lower()
+
+    if not pedido_comparacao:
+        return False
+
+    if movimentacoes is None or movimentacoes.empty:
+        return False
+
+    if "tipo" not in movimentacoes.columns or "pedido" not in movimentacoes.columns:
+        return False
+
+    movimentacoes_validacao = movimentacoes.copy()
+
+    tipos_saida_ativos = ["SAIDA_TORRE", "SAIDA_ILHA"]
+
+    movimentacoes_validacao["tipo"] = (
+        movimentacoes_validacao["tipo"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    movimentacoes_validacao["pedido"] = (
+        movimentacoes_validacao["pedido"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+
+    pedidos_encontrados = movimentacoes_validacao[
+        movimentacoes_validacao["tipo"].isin(tipos_saida_ativos)
+        & (movimentacoes_validacao["pedido"] == pedido_comparacao)
+    ]
+
+    return not pedidos_encontrados.empty
 
 
 def montar_composicao_completa(codigo_kit, quantidade_base, kits, composicao_kits, produtos, nivel=0):
@@ -1027,6 +1068,12 @@ if "confirmar_saida" not in st.session_state:
 if "erro_confirmar_saida" not in st.session_state:
     st.session_state["erro_confirmar_saida"] = None
 
+if "erro_saida_form" not in st.session_state:
+    st.session_state["erro_saida_form"] = None
+
+if "rascunho_saida" not in st.session_state:
+    st.session_state["rascunho_saida"] = None
+
 if "entrada_processando" not in st.session_state:
     st.session_state["entrada_processando"] = None
 
@@ -1094,6 +1141,8 @@ def limpar_simulacao_saida():
     st.session_state["simulacao_saida"] = None
     st.session_state["confirmar_saida"] = None
     st.session_state["erro_confirmar_saida"] = None
+    st.session_state["erro_saida_form"] = None
+    st.session_state["rascunho_saida"] = None
     st.session_state["reset_saida"] += 1
     st.session_state["bloqueado"] = False
 
@@ -1153,11 +1202,15 @@ if st.session_state["saida_processando"] is not None:
         st.session_state["simulacao_saida"] = None
         st.session_state["confirmar_saida"] = None
         st.session_state["erro_confirmar_saida"] = None
+        st.session_state["erro_saida_form"] = None
+        st.session_state["rascunho_saida"] = None
         st.session_state["reset_saida"] += 1
 
     except Exception as e:
-        st.session_state["erro_confirmar_saida"] = f"Erro ao registrar saída: {e}"
-        st.session_state["confirmar_saida"] = saida
+        st.session_state["erro_saida_form"] = f"Erro ao registrar saída: {e}"
+        st.session_state["rascunho_saida"] = saida
+        st.session_state["confirmar_saida"] = None
+        st.session_state["erro_confirmar_saida"] = None
         st.session_state["simulacao_saida"] = None
 
     finally:
@@ -1608,9 +1661,6 @@ if st.session_state["confirmar_saida"] is not None:
                 hide_index=True
             )
 
-    if st.session_state.get("erro_confirmar_saida"):
-        st.error(st.session_state["erro_confirmar_saida"])
-
     if possui_insuficiente:
         st.error(
             "Não é possível confirmar esta saída. "
@@ -1639,8 +1689,10 @@ if st.session_state["confirmar_saida"] is not None:
         st.rerun()
 
     if cancelar and not st.session_state["bloqueado"]:
+        st.session_state["rascunho_saida"] = saida
         st.session_state["confirmar_saida"] = None
         st.session_state["erro_confirmar_saida"] = None
+        st.session_state["erro_saida_form"] = None
         st.session_state["menu_principal"] = "Saída de Produtos"
         st.rerun()
 
@@ -2010,11 +2062,13 @@ try:
         )
         opcoes_produtos_extras = [""] + produtos_ativos_saida["produto_opcao"].tolist()
 
+        rascunho_saida = st.session_state.get("rascunho_saida") or {}
+
         if "tipo_saida_selecionado" not in st.session_state:
-            st.session_state["tipo_saida_selecionado"] = "TORRE"
+            st.session_state["tipo_saida_selecionado"] = rascunho_saida.get("tipo_saida", "TORRE")
 
         if "tipo_monzi_selecionado" not in st.session_state:
-            st.session_state["tipo_monzi_selecionado"] = "Prata"
+            st.session_state["tipo_monzi_selecionado"] = rascunho_saida.get("tipo_monzi", "Prata")
 
         col_tipo_1, col_tipo_2, col_tipo_3 = st.columns([2, 1, 1])
 
@@ -2037,7 +2091,9 @@ try:
         with st.form(f"form_saida_produtos_{tipo_saida}_{tipo_monzi}_{st.session_state['reset_saida']}"):
             pedido_saida = st.text_input(
                 "Número do pedido",
-                placeholder="Ex: PED123"
+                placeholder="Ex: PED123",
+                value=rascunho_saida.get("pedido", ""),
+                key=f"pedido_saida_{st.session_state['reset_saida']}"
             )
 
             st.markdown(f"### Ajustes da {tipo_saida.lower()}")
@@ -2055,11 +2111,13 @@ try:
                 coluna_atual = colunas_ajustes[indice_def % 3]
 
                 with coluna_atual:
+                    ajustes_rascunho = rascunho_saida.get("ajustes_checklist", {})
+
                     ajustes_checklist[definicao["chave"]] = st.number_input(
                         definicao["grupo"],
                         min_value=0,
                         step=1,
-                        value=int(definicao["padrao"]),
+                        value=int(ajustes_rascunho.get(definicao["chave"], definicao["padrao"])),
                         key=f"ajuste_{tipo_saida}_{tipo_monzi}_{definicao['chave']}_{st.session_state['reset_saida']}"
                     )
 
@@ -2069,8 +2127,27 @@ try:
                 "Use o botão de + da tabela para criar novas linhas. Se o produto já existir na saída, a quantidade será somada."
             )
 
+            produtos_extras_rascunho = []
+
+            for extra in rascunho_saida.get("produtos_extras", []):
+                codigo_extra_rascunho = str(extra.get("codigo_produto", "")).strip()
+                nome_extra_rascunho = str(extra.get("produto", "")).strip()
+                quantidade_extra_rascunho = extra.get("quantidade", 0)
+
+                produto_opcao_rascunho = ""
+                if codigo_extra_rascunho and nome_extra_rascunho:
+                    produto_opcao_rascunho = f"{codigo_extra_rascunho} - {nome_extra_rascunho}"
+
+                produtos_extras_rascunho.append({
+                    "Produto": produto_opcao_rascunho,
+                    "Quantidade": quantidade_extra_rascunho
+                })
+
+            if not produtos_extras_rascunho:
+                produtos_extras_rascunho = [{"Produto": "", "Quantidade": 0}]
+
             df_extras_editor = st.data_editor(
-                pd.DataFrame([{"Produto": "", "Quantidade": 0}]),
+                pd.DataFrame(produtos_extras_rascunho),
                 use_container_width=True,
                 hide_index=True,
                 num_rows="dynamic",
@@ -2101,75 +2178,117 @@ try:
                 )
 
         if botao_confirmar_saida:
+            st.session_state["erro_saida_form"] = None
             st.session_state["erro_confirmar_saida"] = None
 
             if not pedido_saida.strip():
-                st.error("Informe o número do pedido.")
-                st.stop()
+                st.session_state["erro_saida_form"] = "Informe o número do pedido."
+            elif pedido_saida_ja_existe(movimentacoes, pedido_saida.strip()):
+                st.session_state["erro_saida_form"] = (
+                    "Erro ao registrar saída: Este pedido já possui saída registrada. "
+                    "Não é possível baixar novamente."
+                )
+            else:
+                df_saida = montar_saida(
+                    tipo_saida=tipo_saida,
+                    tipo_monzi=tipo_monzi,
+                    kits=kits,
+                    composicao_kits=composicao_kits,
+                    produtos=produtos
+                )
 
-            df_saida = montar_saida(
-                tipo_saida=tipo_saida,
-                tipo_monzi=tipo_monzi,
-                kits=kits,
-                composicao_kits=composicao_kits,
-                produtos=produtos
-            )
+                if df_saida.empty:
+                    st.session_state["erro_saida_form"] = "Nenhum item foi encontrado para a saída."
+                else:
+                    df_saida = aplicar_ajustes_checklist(
+                        df_saida=df_saida,
+                        ajustes_checklist=ajustes_checklist,
+                        tipo_saida=tipo_saida,
+                        tipo_monzi=tipo_monzi
+                    )
 
-            if df_saida.empty:
-                st.warning("Nenhum item foi encontrado para a saída.")
-                st.stop()
+                    produtos_extras = []
 
-            df_saida = aplicar_ajustes_checklist(
-                df_saida=df_saida,
-                ajustes_checklist=ajustes_checklist,
-                tipo_saida=tipo_saida,
-                tipo_monzi=tipo_monzi
-            )
+                    if df_extras_editor is not None and not df_extras_editor.empty:
+                        for _, linha_extra in df_extras_editor.iterrows():
+                            produto_extra = str(linha_extra.get("Produto", "") or "").strip()
+                            quantidade_extra = linha_extra.get("Quantidade", 0)
 
-            produtos_extras = []
+                            try:
+                                quantidade_extra = float(quantidade_extra or 0)
+                            except Exception:
+                                quantidade_extra = 0
 
-            if df_extras_editor is not None and not df_extras_editor.empty:
-                for _, linha_extra in df_extras_editor.iterrows():
-                    produto_extra = str(linha_extra.get("Produto", "") or "").strip()
-                    quantidade_extra = linha_extra.get("Quantidade", 0)
+                            if not produto_extra or quantidade_extra <= 0:
+                                continue
 
-                    try:
-                        quantidade_extra = float(quantidade_extra or 0)
-                    except Exception:
-                        quantidade_extra = 0
+                            codigo_extra = produto_extra.split(" - ")[0]
+                            nome_extra = produto_extra.split(" - ", 1)[1] if " - " in produto_extra else produto_extra
 
-                    if not produto_extra or quantidade_extra <= 0:
-                        continue
+                            produtos_extras.append({
+                                "codigo_produto": codigo_extra,
+                                "produto": nome_extra,
+                                "quantidade": int(quantidade_extra) if quantidade_extra.is_integer() else quantidade_extra
+                            })
 
-                    codigo_extra = produto_extra.split(" - ")[0]
-                    nome_extra = produto_extra.split(" - ", 1)[1] if " - " in produto_extra else produto_extra
+                    df_saida = adicionar_produtos_extras(
+                        df_saida=df_saida,
+                        produtos_extras=produtos_extras,
+                        produtos=produtos
+                    )
 
-                    produtos_extras.append({
-                        "codigo_produto": codigo_extra,
-                        "produto": nome_extra,
-                        "quantidade": int(quantidade_extra) if quantidade_extra.is_integer() else quantidade_extra
-                    })
+                    if df_saida.empty:
+                        st.session_state["erro_saida_form"] = "Nenhum item será baixado com os ajustes informados."
+                    else:
+                        saida_confirmacao = {
+                            "pedido": pedido_saida.strip(),
+                            "tipo_saida": tipo_saida,
+                            "tipo_monzi": tipo_monzi,
+                            "ajustes_checklist": ajustes_checklist,
+                            "produtos_extras": produtos_extras,
+                            "itens": df_saida.to_dict("records")
+                        }
 
-            df_saida = adicionar_produtos_extras(
-                df_saida=df_saida,
-                produtos_extras=produtos_extras,
-                produtos=produtos
-            )
+                        st.session_state["rascunho_saida"] = saida_confirmacao
+                        st.session_state["confirmar_saida"] = saida_confirmacao
+                        st.session_state["simulacao_saida"] = None
+                        st.rerun()
 
-            if df_saida.empty:
-                st.warning("Nenhum item será baixado com os ajustes informados.")
-                st.stop()
+            if st.session_state.get("erro_saida_form"):
+                produtos_extras_rascunho_erro = []
 
-            st.session_state["confirmar_saida"] = {
-                "pedido": pedido_saida.strip(),
-                "tipo_saida": tipo_saida,
-                "tipo_monzi": tipo_monzi,
-                "ajustes_checklist": ajustes_checklist,
-                "produtos_extras": produtos_extras,
-                "itens": df_saida.to_dict("records")
-            }
-            st.session_state["simulacao_saida"] = None
-            st.rerun()
+                if df_extras_editor is not None and not df_extras_editor.empty:
+                    for _, linha_extra in df_extras_editor.iterrows():
+                        produto_extra = str(linha_extra.get("Produto", "") or "").strip()
+                        quantidade_extra = linha_extra.get("Quantidade", 0)
+
+                        try:
+                            quantidade_extra = float(quantidade_extra or 0)
+                        except Exception:
+                            quantidade_extra = 0
+
+                        if not produto_extra or quantidade_extra <= 0:
+                            continue
+
+                        codigo_extra = produto_extra.split(" - ")[0]
+                        nome_extra = produto_extra.split(" - ", 1)[1] if " - " in produto_extra else produto_extra
+
+                        produtos_extras_rascunho_erro.append({
+                            "codigo_produto": codigo_extra,
+                            "produto": nome_extra,
+                            "quantidade": int(quantidade_extra) if quantidade_extra.is_integer() else quantidade_extra
+                        })
+
+                st.session_state["rascunho_saida"] = {
+                    "pedido": pedido_saida.strip(),
+                    "tipo_saida": tipo_saida,
+                    "tipo_monzi": tipo_monzi,
+                    "ajustes_checklist": ajustes_checklist,
+                    "produtos_extras": produtos_extras_rascunho_erro
+                }
+
+        if st.session_state.get("erro_saida_form"):
+            st.error(st.session_state["erro_saida_form"])
 
     elif aba_atual == "Cadastro de Produtos":
         st.subheader("Cadastro de Produtos")
