@@ -1080,8 +1080,6 @@ if not usuario_tem_acesso(st.session_state["menu_principal"]):
 def iniciar_processamento_saida(saida):
     st.session_state["bloqueado"] = True
     st.session_state["saida_processando"] = saida
-    st.session_state["simulacao_saida"] = None
-    st.session_state["reset_saida"] += 1
 
 
 def limpar_simulacao_saida():
@@ -1147,6 +1145,7 @@ if st.session_state["saida_processando"] is not None:
 
     except Exception as e:
         st.session_state["mensagem_erro"] = f"Erro ao registrar saída: {e}"
+        st.session_state["simulacao_saida"] = saida
 
     finally:
         st.session_state["saida_processando"] = None
