@@ -668,7 +668,7 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
         },
         {
             "chave": "manual_montagem",
-            "grupo": "Manual de montagem torre",
+            "grupo": "Manual de montagem",
             "codigos": ["16"],
             "padrao": 1,
             "quantidades_por_unidade": {"16": 1}
