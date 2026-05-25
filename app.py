@@ -2,6 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import requests
+import html
 from datetime import datetime
 
 st.set_page_config(
@@ -1801,19 +1802,64 @@ if st.session_state["confirmar_cancelamento_saida"] is not None:
 
 # MENSAGENS
 if st.session_state["mensagem_sucesso"]:
-    st.success(st.session_state["mensagem_sucesso"])
+    mensagem_sucesso_atual = str(st.session_state["mensagem_sucesso"])
 
     if st.session_state.get("rolar_topo_apos_sucesso", False):
+        mensagem_segura = html.escape(mensagem_sucesso_atual)
+
+        st.markdown(
+            f"""
+            <div style="
+                position: fixed;
+                top: 0.75rem;
+                left: 50%;
+                transform: translateX(-50%);
+                width: min(1100px, calc(100vw - 2rem));
+                z-index: 999999;
+                background-color: #0f5132;
+                color: #d1e7dd;
+                border: 1px solid #198754;
+                border-radius: 0.5rem;
+                padding: 0.9rem 1rem;
+                font-weight: 600;
+                box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.35);
+            ">
+                {mensagem_segura}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
         components.html(
             """
             <script>
-                window.parent.scrollTo({ top: 0, behavior: 'smooth' });
+                const doc = window.parent.document;
+                const seletores = [
+                    'section[data-testid="stAppViewContainer"]',
+                    'div[data-testid="stAppViewContainer"]',
+                    'div[data-testid="stVerticalBlock"]',
+                    'main',
+                    '.main'
+                ];
+
+                window.parent.scrollTo(0, 0);
+
+                seletores.forEach((seletor) => {
+                    doc.querySelectorAll(seletor).forEach((elemento) => {
+                        try {
+                            elemento.scrollTo({ top: 0, behavior: 'smooth' });
+                            elemento.scrollTop = 0;
+                        } catch (erro) {}
+                    });
+                });
             </script>
             """,
             height=0
         )
+
         st.session_state["rolar_topo_apos_sucesso"] = False
 
+    st.success(mensagem_sucesso_atual)
     st.session_state["mensagem_sucesso"] = None
 
 if st.session_state["mensagem_erro"]:
