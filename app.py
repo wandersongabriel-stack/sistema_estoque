@@ -701,9 +701,9 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
             definicoes.insert(4, {
                 "chave": "monzi_amarelo",
                 "grupo": "Monzi amarelo",
-                "codigos": ["8", "9"],
+                "codigos": ["8", "27"],
                 "padrao": 2,
-                "quantidades_por_unidade": {"8": 1, "9": 1}
+                "quantidades_por_unidade": {"8": 1, "27": 1}
             })
         else:
             definicoes.insert(4, {
@@ -716,9 +716,9 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
             definicoes.insert(5, {
                 "chave": "monzi_amarelo",
                 "grupo": "Monzi amarelo",
-                "codigos": ["8", "9"],
+                "codigos": ["8", "27"],
                 "padrao": 1,
-                "quantidades_por_unidade": {"8": 1, "9": 1}
+                "quantidades_por_unidade": {"8": 1, "27": 1}
             })
 
         return definicoes
@@ -864,9 +864,9 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
         definicoes.insert(4, {
             "chave": "monzi_amarelo",
             "grupo": "Monzi amarelo",
-            "codigos": ["8", "9"],
+            "codigos": ["8", "27"],
             "padrao": 1,
-            "quantidades_por_unidade": {"8": 1, "9": 1}
+            "quantidades_por_unidade": {"8": 1, "27": 1}
         })
     else:
         definicoes.insert(4, {
@@ -879,9 +879,9 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
         definicoes.insert(5, {
             "chave": "monzi_amarelo",
             "grupo": "Monzi amarelo",
-            "codigos": ["8", "9"],
+            "codigos": ["8", "27"],
             "padrao": 1,
-            "quantidades_por_unidade": {"8": 1, "9": 1}
+            "quantidades_por_unidade": {"8": 1, "27": 1}
         })
 
     return definicoes
@@ -939,6 +939,20 @@ def aplicar_ajustes_checklist(df_saida, ajustes_checklist, tipo_saida, tipo_monz
                     ],
                     ignore_index=True
                 )
+
+    codigos_controlados_checklist = set()
+    for tipo_monzi_possivel in ["Prata", "Amarelo", "Ambos"]:
+        for definicao in obter_definicoes_checklist(tipo_saida, tipo_monzi_possivel):
+            for codigo in definicao.get("quantidades_por_unidade", {}).keys():
+                codigos_controlados_checklist.add(str(codigo))
+
+    codigos_desejados = set(str(codigo) for codigo in quantidades_desejadas_por_codigo.keys())
+    codigos_para_remover = codigos_controlados_checklist - codigos_desejados
+
+    if codigos_para_remover and not df_saida.empty:
+        df_saida = df_saida[
+            ~df_saida["codigo_produto"].astype(str).isin(codigos_para_remover)
+        ].copy()
 
     df_saida = df_saida[df_saida["quantidade"] > 0].copy()
 
