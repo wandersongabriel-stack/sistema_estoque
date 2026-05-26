@@ -131,7 +131,6 @@ PERMISSOES_POR_PERFIL = {
         "Consulta de Estoque",
         "Entrada de Produtos",
         "Edição de Produtos",
-        "Consulta de Kits",
         "Histórico",
     ],
     "saida": [
@@ -1260,14 +1259,31 @@ if st.session_state["entrada_processando"] is not None:
 
     try:
         with st.spinner("Registrando entrada no estoque. Aguarde..."):
-            registrar_movimentacao(
-                codigo_produto=entrada["codigo_produto"],
-                tipo="ENTRADA",
-                quantidade=entrada["quantidade"],
-                observacao=entrada["observacao"]
-            )
+            itens_entrada = entrada.get("itens")
 
-        st.session_state["mensagem_sucesso"] = "Entrada registrada no estoque."
+            if itens_entrada:
+                for item_entrada in itens_entrada:
+                    registrar_movimentacao(
+                        codigo_produto=item_entrada["codigo_produto"],
+                        tipo="ENTRADA",
+                        quantidade=item_entrada["quantidade"],
+                        observacao=item_entrada.get("observacao", "")
+                    )
+            else:
+                registrar_movimentacao(
+                    codigo_produto=entrada["codigo_produto"],
+                    tipo="ENTRADA",
+                    quantidade=entrada["quantidade"],
+                    observacao=entrada["observacao"]
+                )
+
+        quantidade_itens = len(entrada.get("itens") or [])
+
+        if quantidade_itens > 1:
+            st.session_state["mensagem_sucesso"] = f"{quantidade_itens} entradas registradas no estoque."
+        else:
+            st.session_state["mensagem_sucesso"] = "Entrada registrada no estoque."
+
         st.session_state["reset_entrada"] += 1
 
     except Exception as e:
@@ -1483,13 +1499,37 @@ if st.session_state["confirmar_entrada"] is not None:
 
     st.info("Revise as informações abaixo antes de confirmar o registro da entrada no estoque.")
 
-    st.write(f"**Produto:** {entrada['produto_nome']}")
-    st.write(f"**Quantidade:** {entrada['quantidade']}")
+    itens_entrada = entrada.get("itens")
 
-    if entrada["observacao"]:
-        st.write(f"**Observação:** {entrada['observacao']}")
+    if itens_entrada:
+        df_confirmacao_entrada = pd.DataFrame(itens_entrada)
+        df_confirmacao_entrada = df_confirmacao_entrada.rename(columns={
+            "codigo_produto": "Código do Produto",
+            "produto_nome": "Produto",
+            "quantidade": "Quantidade",
+            "observacao": "Observação"
+        })
+
+        df_confirmacao_entrada = formatar_colunas_numericas_exibicao(
+            df_confirmacao_entrada,
+            ["Quantidade"]
+        )
+
+        st.dataframe(
+            df_confirmacao_entrada[
+                ["Código do Produto", "Produto", "Quantidade", "Observação"]
+            ],
+            use_container_width=True,
+            hide_index=True
+        )
     else:
-        st.write("**Observação:** Não informada")
+        st.write(f"**Produto:** {entrada['produto_nome']}")
+        st.write(f"**Quantidade:** {entrada['quantidade']}")
+
+        if entrada["observacao"]:
+            st.write(f"**Observação:** {entrada['observacao']}")
+        else:
+            st.write("**Observação:** Não informada")
 
     col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
 
@@ -2135,24 +2175,38 @@ try:
                 produtos_ativos["codigo"].astype(str) + " - " + produtos_ativos["nome"]
             )
 
+            opcoes_produtos_entrada = [""] + produtos_ativos["produto_opcao"].tolist()
+
             with st.form(f"form_entrada_produtos_{st.session_state['reset_entrada']}"):
-                produto_selecionado = st.selectbox(
-                    "Produto",
-                    produtos_ativos["produto_opcao"].tolist(),
-                    key=f"produto_entrada_{st.session_state['reset_entrada']}"
+                st.caption(
+                    "Adicione uma linha para cada produto que entrará no estoque. "
+                    "Use o botão de + da tabela para criar novas linhas."
                 )
 
-                quantidade = st.number_input(
-                    "Quantidade",
-                    min_value=1,
-                    step=1,
-                    key=f"quantidade_entrada_{st.session_state['reset_entrada']}"
-                )
-
-                observacao = st.text_area(
-                    "Observação",
-                    placeholder="Campo opcional",
-                    key=f"observacao_entrada_{st.session_state['reset_entrada']}"
+                df_entrada_editor = st.data_editor(
+                    pd.DataFrame([{"Produto": "", "Quantidade": 0, "Observação": ""}]),
+                    use_container_width=True,
+                    hide_index=True,
+                    num_rows="dynamic",
+                    column_config={
+                        "Produto": st.column_config.SelectboxColumn(
+                            "Produto",
+                            options=opcoes_produtos_entrada,
+                            required=False
+                        ),
+                        "Quantidade": st.column_config.NumberColumn(
+                            "Quantidade",
+                            min_value=0,
+                            step=1,
+                            default=0,
+                            required=False
+                        ),
+                        "Observação": st.column_config.TextColumn(
+                            "Observação",
+                            required=False
+                        )
+                    },
+                    key=f"entrada_produtos_editor_{st.session_state['reset_entrada']}"
                 )
 
                 col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
@@ -2161,14 +2215,46 @@ try:
                     botao_entrada = st.form_submit_button("Registrar entrada")
 
             if botao_entrada:
-                codigo_produto = produto_selecionado.split(" - ")[0]
-                produto_nome = produto_selecionado.split(" - ", 1)[1]
+                itens_entrada = []
+
+                if df_entrada_editor is not None and not df_entrada_editor.empty:
+                    for _, linha_entrada in df_entrada_editor.iterrows():
+                        produto_entrada = str(linha_entrada.get("Produto", "") or "").strip()
+                        quantidade_entrada = linha_entrada.get("Quantidade", 0)
+                        observacao_entrada = str(linha_entrada.get("Observação", "") or "").strip()
+
+                        try:
+                            quantidade_entrada = float(quantidade_entrada or 0)
+                        except Exception:
+                            quantidade_entrada = 0
+
+                        if not produto_entrada and quantidade_entrada <= 0:
+                            continue
+
+                        if not produto_entrada:
+                            exibir_alerta_temporario("Selecione o produto em todas as linhas preenchidas.", tipo="error")
+                            st.stop()
+
+                        if quantidade_entrada <= 0:
+                            exibir_alerta_temporario("Informe uma quantidade maior que zero em todas as linhas preenchidas.", tipo="error")
+                            st.stop()
+
+                        codigo_produto = produto_entrada.split(" - ")[0]
+                        produto_nome = produto_entrada.split(" - ", 1)[1] if " - " in produto_entrada else produto_entrada
+
+                        itens_entrada.append({
+                            "codigo_produto": codigo_produto,
+                            "produto_nome": produto_nome,
+                            "quantidade": int(quantidade_entrada) if quantidade_entrada.is_integer() else quantidade_entrada,
+                            "observacao": observacao_entrada
+                        })
+
+                if not itens_entrada:
+                    exibir_alerta_temporario("Informe pelo menos um produto para entrada.", tipo="error")
+                    st.stop()
 
                 st.session_state["confirmar_entrada"] = {
-                    "codigo_produto": codigo_produto,
-                    "produto_nome": produto_nome,
-                    "quantidade": int(quantidade),
-                    "observacao": observacao.strip()
+                    "itens": itens_entrada
                 }
 
                 st.rerun()
