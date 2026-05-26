@@ -339,29 +339,6 @@ def tratar_produtos(produtos):
 
     return produtos
 
-
-
-def ajustar_nomes_adesivos_monzi(produtos):
-    produtos = produtos.copy()
-
-    if "codigo" not in produtos.columns or "nome" not in produtos.columns:
-        return produtos
-
-    produtos["codigo"] = produtos["codigo"].astype(str)
-
-    produtos.loc[
-        produtos["codigo"] == "9",
-        "nome"
-    ] = "Adesivo monzi prata"
-
-    produtos.loc[
-        produtos["codigo"] == "27",
-        "nome"
-    ] = "Adesivo monzi amarelo"
-
-    return produtos
-
-
 def recalcular_status_produtos(produtos):
     produtos = produtos.copy()
 
@@ -975,20 +952,6 @@ def aplicar_ajustes_checklist(df_saida, ajustes_checklist, tipo_saida, tipo_monz
     if codigos_para_remover and not df_saida.empty:
         df_saida = df_saida[
             ~df_saida["codigo_produto"].astype(str).isin(codigos_para_remover)
-        ].copy()
-
-    tipo_monzi_normalizado = str(tipo_monzi).strip().lower()
-
-    if tipo_monzi_normalizado == "amarelo" and not df_saida.empty:
-        # Monzi amarelo usa o adesivo 27. Garante que o adesivo prata (9) não fique vindo da composição antiga do kit.
-        df_saida = df_saida[
-            df_saida["codigo_produto"].astype(str) != "9"
-        ].copy()
-
-    if tipo_monzi_normalizado == "prata" and not df_saida.empty:
-        # Monzi prata usa o adesivo 9. Garante que o adesivo amarelo (27) não entre por engano.
-        df_saida = df_saida[
-            df_saida["codigo_produto"].astype(str) != "27"
         ].copy()
 
     df_saida = df_saida[df_saida["quantidade"] > 0].copy()
@@ -2187,7 +2150,6 @@ if st.session_state["mensagem_erro"]:
 try:
     produtos, movimentacoes, kits, composicao_kits = carregar_dados()
     produtos = tratar_produtos(produtos)
-    produtos = ajustar_nomes_adesivos_monzi(produtos)
     produtos = recalcular_status_produtos(produtos)
 
     kits["codigo_kit"] = kits["codigo_kit"].astype(str)
