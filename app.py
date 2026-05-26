@@ -121,6 +121,7 @@ PERMISSOES_POR_PERFIL = {
     "admin": [
         "Consulta de Estoque",
         "Entrada de Produtos",
+        "Avaria",
         "Saída de Produtos",
         "Cadastro de Produtos",
         "Edição de Produtos",
@@ -130,7 +131,9 @@ PERMISSOES_POR_PERFIL = {
     "entrada": [
         "Consulta de Estoque",
         "Entrada de Produtos",
+        "Avaria",
         "Edição de Produtos",
+        "Consulta de Kits",
         "Histórico",
     ],
     "saida": [
@@ -242,6 +245,7 @@ def sair_do_sistema():
         "usuario",
         "perfil",
         "confirmar_entrada",
+        "confirmar_avaria",
         "confirmar_cadastro",
         "confirmar_edicao",
         "confirmar_saida",
@@ -249,6 +253,7 @@ def sair_do_sistema():
         "erro_saida_form",
         "rascunho_saida",
         "entrada_processando",
+        "avaria_processando",
         "saida_processando",
         "simulacao_saida",
         "cadastro_processando",
@@ -1198,6 +1203,9 @@ if "menu_principal" not in st.session_state:
 if "confirmar_entrada" not in st.session_state:
     st.session_state["confirmar_entrada"] = None
 
+if "confirmar_avaria" not in st.session_state:
+    st.session_state["confirmar_avaria"] = None
+
 if "confirmar_cadastro" not in st.session_state:
     st.session_state["confirmar_cadastro"] = None
 
@@ -1225,6 +1233,9 @@ if "rascunho_saida" not in st.session_state:
 if "entrada_processando" not in st.session_state:
     st.session_state["entrada_processando"] = None
 
+if "avaria_processando" not in st.session_state:
+    st.session_state["avaria_processando"] = None
+
 if "saida_processando" not in st.session_state:
     st.session_state["saida_processando"] = None
 
@@ -1248,6 +1259,9 @@ if "cancelamento_processando" not in st.session_state:
 
 if "reset_entrada" not in st.session_state:
     st.session_state["reset_entrada"] = 0
+
+if "reset_avaria" not in st.session_state:
+    st.session_state["reset_avaria"] = 0
 
 if "reset_saida" not in st.session_state:
     st.session_state["reset_saida"] = 0
@@ -1306,14 +1320,31 @@ if st.session_state["entrada_processando"] is not None:
 
     try:
         with st.spinner("Registrando entrada no estoque. Aguarde..."):
-            registrar_movimentacao(
-                codigo_produto=entrada["codigo_produto"],
-                tipo="ENTRADA",
-                quantidade=entrada["quantidade"],
-                observacao=entrada["observacao"]
-            )
+            itens_entrada = entrada.get("itens")
 
-        st.session_state["mensagem_sucesso"] = "Entrada registrada no estoque."
+            if itens_entrada:
+                for item_entrada in itens_entrada:
+                    registrar_movimentacao(
+                        codigo_produto=item_entrada["codigo_produto"],
+                        tipo="ENTRADA",
+                        quantidade=item_entrada["quantidade"],
+                        observacao=item_entrada.get("observacao", "")
+                    )
+            else:
+                registrar_movimentacao(
+                    codigo_produto=entrada["codigo_produto"],
+                    tipo="ENTRADA",
+                    quantidade=entrada["quantidade"],
+                    observacao=entrada["observacao"]
+                )
+
+        quantidade_itens = len(entrada.get("itens") or [])
+
+        if quantidade_itens > 1:
+            st.session_state["mensagem_sucesso"] = f"{quantidade_itens} entradas registradas no estoque."
+        else:
+            st.session_state["mensagem_sucesso"] = "Entrada registrada no estoque."
+
         st.session_state["reset_entrada"] += 1
 
     except Exception as e:
@@ -1323,6 +1354,50 @@ if st.session_state["entrada_processando"] is not None:
         st.session_state["entrada_processando"] = None
         st.session_state["bloqueado"] = False
         st.session_state["menu_principal"] = "Entrada de Produtos"
+        st.rerun()
+
+    st.stop()
+
+
+# PROCESSAMENTO DE AVARIA
+if st.session_state["avaria_processando"] is not None:
+    bloquear_cliques_interface()
+
+    avaria = st.session_state["avaria_processando"]
+
+    st.divider()
+    st.subheader("Processando avaria")
+
+    try:
+        with st.spinner("Registrando saída por avaria no estoque. Aguarde..."):
+            motivo = str(avaria.get("motivo", "")).strip()
+            observacao_avaria = f"AVARIA - {motivo}" if motivo else "AVARIA"
+
+            for item_avaria in avaria.get("itens", []):
+                registrar_movimentacao(
+                    codigo_produto=item_avaria["codigo_produto"],
+                    tipo="SAIDA",
+                    quantidade=item_avaria["quantidade"],
+                    pedido="AVARIA",
+                    observacao=observacao_avaria
+                )
+
+        quantidade_itens = len(avaria.get("itens") or [])
+
+        if quantidade_itens > 1:
+            st.session_state["mensagem_sucesso"] = f"{quantidade_itens} saídas por avaria registradas no estoque."
+        else:
+            st.session_state["mensagem_sucesso"] = "Saída por avaria registrada no estoque."
+
+        st.session_state["reset_avaria"] += 1
+
+    except Exception as e:
+        st.session_state["mensagem_erro"] = f"Erro ao registrar avaria: {e}"
+
+    finally:
+        st.session_state["avaria_processando"] = None
+        st.session_state["bloqueado"] = False
+        st.session_state["menu_principal"] = "Avaria"
         st.rerun()
 
     st.stop()
@@ -1529,13 +1604,37 @@ if st.session_state["confirmar_entrada"] is not None:
 
     st.info("Revise as informações abaixo antes de confirmar o registro da entrada no estoque.")
 
-    st.write(f"**Produto:** {entrada['produto_nome']}")
-    st.write(f"**Quantidade:** {entrada['quantidade']}")
+    itens_entrada = entrada.get("itens")
 
-    if entrada["observacao"]:
-        st.write(f"**Observação:** {entrada['observacao']}")
+    if itens_entrada:
+        df_confirmacao_entrada = pd.DataFrame(itens_entrada)
+        df_confirmacao_entrada = df_confirmacao_entrada.rename(columns={
+            "codigo_produto": "Código do Produto",
+            "produto_nome": "Produto",
+            "quantidade": "Quantidade",
+            "observacao": "Observação"
+        })
+
+        df_confirmacao_entrada = formatar_colunas_numericas_exibicao(
+            df_confirmacao_entrada,
+            ["Quantidade"]
+        )
+
+        st.dataframe(
+            df_confirmacao_entrada[
+                ["Código do Produto", "Produto", "Quantidade", "Observação"]
+            ],
+            use_container_width=True,
+            hide_index=True
+        )
     else:
-        st.write("**Observação:** Não informada")
+        st.write(f"**Produto:** {entrada['produto_nome']}")
+        st.write(f"**Quantidade:** {entrada['quantidade']}")
+
+        if entrada["observacao"]:
+            st.write(f"**Observação:** {entrada['observacao']}")
+        else:
+            st.write("**Observação:** Não informada")
 
     col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
 
@@ -1563,6 +1662,105 @@ if st.session_state["confirmar_entrada"] is not None:
         st.session_state["cancelamento_processando"] = {
             "chave_confirmacao": "confirmar_entrada",
             "destino": "Entrada de Produtos"
+        }
+        st.rerun()
+
+    st.stop()
+
+
+# CONFIRMAÇÃO DE AVARIA
+if st.session_state["confirmar_avaria"] is not None:
+    avaria = st.session_state["confirmar_avaria"]
+
+    st.divider()
+    st.subheader("Confirmação de avaria")
+
+    st.info("Revise as informações abaixo antes de confirmar a saída por avaria no estoque.")
+
+    st.write(f"**Motivo da avaria:** {avaria['motivo']}")
+
+    itens_avaria = avaria.get("itens", [])
+    df_confirmacao_avaria = pd.DataFrame(itens_avaria)
+
+    possui_insuficiente = False
+    if not df_confirmacao_avaria.empty and "status" in df_confirmacao_avaria.columns:
+        possui_insuficiente = (
+            df_confirmacao_avaria["status"].astype(str).str.upper() == "INSUFICIENTE"
+        ).any()
+
+    if df_confirmacao_avaria.empty:
+        st.warning("Nenhum item encontrado para esta avaria.")
+    else:
+        df_confirmacao_avaria = df_confirmacao_avaria.rename(columns={
+            "codigo_produto": "Código do Produto",
+            "produto_nome": "Produto",
+            "quantidade": "Quantidade",
+            "estoque_atual": "Estoque Atual",
+            "saldo_apos_saida": "Saldo Após Saída",
+            "status": "Status"
+        })
+
+        df_confirmacao_avaria = formatar_colunas_numericas_exibicao(
+            df_confirmacao_avaria,
+            ["Quantidade", "Estoque Atual", "Saldo Após Saída"]
+        )
+
+        def colorir_status_avaria(valor):
+            valor = str(valor).upper()
+
+            if valor == "INSUFICIENTE":
+                return "background-color: #7f1d1d; color: white; font-weight: 700;"
+
+            if valor == "OK":
+                return "background-color: #14532d; color: white; font-weight: 700;"
+
+            return ""
+
+        tabela_avaria = df_confirmacao_avaria[
+            ["Código do Produto", "Produto", "Quantidade", "Estoque Atual", "Saldo Após Saída", "Status"]
+        ].style.map(
+            colorir_status_avaria,
+            subset=["Status"]
+        )
+
+        st.dataframe(
+            tabela_avaria,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    if possui_insuficiente:
+        exibir_alerta_temporario(
+            "Não é possível confirmar esta avaria. Existem itens com estoque insuficiente.",
+            tipo="error"
+        )
+
+    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
+
+    with col_confirmar:
+        confirmar = st.button(
+            "Confirmar",
+            type="primary",
+            disabled=st.session_state["bloqueado"] or possui_insuficiente or df_confirmacao_avaria.empty
+        )
+
+    with col_cancelar:
+        cancelar = st.button(
+            "Cancelar",
+            disabled=st.session_state["bloqueado"]
+        )
+
+    if confirmar and not st.session_state["bloqueado"]:
+        st.session_state["bloqueado"] = True
+        st.session_state["avaria_processando"] = avaria
+        st.session_state["confirmar_avaria"] = None
+        st.rerun()
+
+    if cancelar and not st.session_state["bloqueado"]:
+        st.session_state["bloqueado"] = True
+        st.session_state["cancelamento_processando"] = {
+            "chave_confirmacao": "confirmar_avaria",
+            "destino": "Avaria"
         }
         st.rerun()
 
@@ -2006,6 +2204,8 @@ try:
             botao_menu("Consulta de Estoque")
         if usuario_tem_acesso("Entrada de Produtos"):
             botao_menu("Entrada de Produtos")
+        if usuario_tem_acesso("Avaria"):
+            botao_menu("Avaria")
         if usuario_tem_acesso("Saída de Produtos"):
             botao_menu("Saída de Produtos")
 
@@ -2181,24 +2381,38 @@ try:
                 produtos_ativos["codigo"].astype(str) + " - " + produtos_ativos["nome"]
             )
 
+            opcoes_produtos_entrada = [""] + produtos_ativos["produto_opcao"].tolist()
+
             with st.form(f"form_entrada_produtos_{st.session_state['reset_entrada']}"):
-                produto_selecionado = st.selectbox(
-                    "Produto",
-                    produtos_ativos["produto_opcao"].tolist(),
-                    key=f"produto_entrada_{st.session_state['reset_entrada']}"
+                st.caption(
+                    "Adicione uma linha para cada produto que entrará no estoque. "
+                    "Use o botão de + da tabela para criar novas linhas."
                 )
 
-                quantidade = st.number_input(
-                    "Quantidade",
-                    min_value=1,
-                    step=1,
-                    key=f"quantidade_entrada_{st.session_state['reset_entrada']}"
-                )
-
-                observacao = st.text_area(
-                    "Observação",
-                    placeholder="Campo opcional",
-                    key=f"observacao_entrada_{st.session_state['reset_entrada']}"
+                df_entrada_editor = st.data_editor(
+                    pd.DataFrame([{"Produto": "", "Quantidade": 0, "Observação": ""}]),
+                    use_container_width=True,
+                    hide_index=True,
+                    num_rows="dynamic",
+                    column_config={
+                        "Produto": st.column_config.SelectboxColumn(
+                            "Produto",
+                            options=opcoes_produtos_entrada,
+                            required=False
+                        ),
+                        "Quantidade": st.column_config.NumberColumn(
+                            "Quantidade",
+                            min_value=0,
+                            step=1,
+                            default=0,
+                            required=False
+                        ),
+                        "Observação": st.column_config.TextColumn(
+                            "Observação",
+                            required=False
+                        )
+                    },
+                    key=f"entrada_produtos_editor_{st.session_state['reset_entrada']}"
                 )
 
                 col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
@@ -2207,17 +2421,167 @@ try:
                     botao_entrada = st.form_submit_button("Registrar entrada")
 
             if botao_entrada:
-                codigo_produto = produto_selecionado.split(" - ")[0]
-                produto_nome = produto_selecionado.split(" - ", 1)[1]
+                itens_entrada = []
+
+                if df_entrada_editor is not None and not df_entrada_editor.empty:
+                    for _, linha_entrada in df_entrada_editor.iterrows():
+                        produto_entrada = str(linha_entrada.get("Produto", "") or "").strip()
+                        quantidade_entrada = linha_entrada.get("Quantidade", 0)
+                        observacao_entrada = str(linha_entrada.get("Observação", "") or "").strip()
+
+                        try:
+                            quantidade_entrada = float(quantidade_entrada or 0)
+                        except Exception:
+                            quantidade_entrada = 0
+
+                        if not produto_entrada and quantidade_entrada <= 0:
+                            continue
+
+                        if not produto_entrada:
+                            exibir_alerta_temporario("Selecione o produto em todas as linhas preenchidas.", tipo="error")
+                            st.stop()
+
+                        if quantidade_entrada <= 0:
+                            exibir_alerta_temporario("Informe uma quantidade maior que zero em todas as linhas preenchidas.", tipo="error")
+                            st.stop()
+
+                        codigo_produto = produto_entrada.split(" - ")[0]
+                        produto_nome = produto_entrada.split(" - ", 1)[1] if " - " in produto_entrada else produto_entrada
+
+                        itens_entrada.append({
+                            "codigo_produto": codigo_produto,
+                            "produto_nome": produto_nome,
+                            "quantidade": int(quantidade_entrada) if quantidade_entrada.is_integer() else quantidade_entrada,
+                            "observacao": observacao_entrada
+                        })
+
+                if not itens_entrada:
+                    exibir_alerta_temporario("Informe pelo menos um produto para entrada.", tipo="error")
+                    st.stop()
 
                 st.session_state["confirmar_entrada"] = {
-                    "codigo_produto": codigo_produto,
-                    "produto_nome": produto_nome,
-                    "quantidade": int(quantidade),
-                    "observacao": observacao.strip()
+                    "itens": itens_entrada
                 }
 
                 st.rerun()
+
+    elif aba_atual == "Avaria":
+        st.subheader("Avaria")
+
+        produtos_ativos = produtos[produtos["ativo"] == "SIM"].copy()
+
+        if produtos_ativos.empty:
+            st.warning("Nenhum produto ativo encontrado.")
+        else:
+            produtos_ativos["produto_opcao"] = (
+                produtos_ativos["codigo"].astype(str) + " - " + produtos_ativos["nome"].astype(str)
+            )
+
+            opcoes_produtos_avaria = [""] + produtos_ativos["produto_opcao"].tolist()
+            produtos_lookup_avaria = produtos_ativos.copy()
+            produtos_lookup_avaria["codigo"] = produtos_lookup_avaria["codigo"].astype(str)
+
+            with st.form(f"form_avaria_produtos_{st.session_state['reset_avaria']}"):
+                st.caption(
+                    "Registre saídas por avaria item por item. O motivo é obrigatório e será gravado na observação das movimentações."
+                )
+
+                motivo_avaria = st.text_area(
+                    "Motivo da avaria",
+                    placeholder="Ex: produto danificado, embalagem rasgada, item quebrado...",
+                    key=f"motivo_avaria_{st.session_state['reset_avaria']}"
+                )
+
+                df_avaria_editor = st.data_editor(
+                    pd.DataFrame([{"Produto": "", "Quantidade": 0}]),
+                    use_container_width=True,
+                    hide_index=True,
+                    num_rows="dynamic",
+                    column_config={
+                        "Produto": st.column_config.SelectboxColumn(
+                            "Produto",
+                            options=opcoes_produtos_avaria,
+                            required=False
+                        ),
+                        "Quantidade": st.column_config.NumberColumn(
+                            "Quantidade",
+                            min_value=0,
+                            step=1,
+                            default=0,
+                            required=False
+                        )
+                    },
+                    key=f"avaria_produtos_editor_{st.session_state['reset_avaria']}"
+                )
+
+                col_vazio_esq, col_centro, col_vazio_dir = st.columns([4, 1, 4])
+
+                with col_centro:
+                    botao_avaria = st.form_submit_button("Registrar avaria")
+
+            if botao_avaria:
+                motivo_avaria = str(motivo_avaria or "").strip()
+
+                if not motivo_avaria:
+                    exibir_alerta_temporario("Informe o motivo da avaria.", tipo="error")
+                    st.stop()
+
+                itens_avaria = []
+
+                if df_avaria_editor is not None and not df_avaria_editor.empty:
+                    for _, linha_avaria in df_avaria_editor.iterrows():
+                        produto_avaria = str(linha_avaria.get("Produto", "") or "").strip()
+                        quantidade_avaria = linha_avaria.get("Quantidade", 0)
+
+                        try:
+                            quantidade_avaria = float(quantidade_avaria or 0)
+                        except Exception:
+                            quantidade_avaria = 0
+
+                        if not produto_avaria and quantidade_avaria <= 0:
+                            continue
+
+                        if not produto_avaria:
+                            exibir_alerta_temporario("Selecione o produto em todas as linhas preenchidas.", tipo="error")
+                            st.stop()
+
+                        if quantidade_avaria <= 0:
+                            exibir_alerta_temporario("Informe uma quantidade maior que zero em todas as linhas preenchidas.", tipo="error")
+                            st.stop()
+
+                        codigo_produto = produto_avaria.split(" - ")[0]
+                        produto_nome = produto_avaria.split(" - ", 1)[1] if " - " in produto_avaria else produto_avaria
+
+                        produto_linha = produtos_lookup_avaria[
+                            produtos_lookup_avaria["codigo"] == str(codigo_produto)
+                        ]
+
+                        estoque_atual = 0
+                        if not produto_linha.empty:
+                            estoque_atual = float(produto_linha.iloc[0].get("estoque_atual", 0) or 0)
+
+                        saldo_apos_saida = estoque_atual - quantidade_avaria
+
+                        itens_avaria.append({
+                            "codigo_produto": codigo_produto,
+                            "produto_nome": produto_nome,
+                            "quantidade": int(quantidade_avaria) if quantidade_avaria.is_integer() else quantidade_avaria,
+                            "estoque_atual": estoque_atual,
+                            "saldo_apos_saida": saldo_apos_saida,
+                            "status": "INSUFICIENTE" if saldo_apos_saida < 0 else "OK"
+                        })
+
+                if not itens_avaria:
+                    exibir_alerta_temporario("Informe pelo menos um produto para avaria.", tipo="error")
+                    st.stop()
+
+                st.session_state["confirmar_avaria"] = {
+                    "motivo": motivo_avaria,
+                    "itens": itens_avaria
+                }
+
+                st.rerun()
+
 
     elif aba_atual == "Saída de Produtos":
         st.subheader("Saída de Produtos")
