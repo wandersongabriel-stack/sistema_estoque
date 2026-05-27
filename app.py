@@ -1092,7 +1092,7 @@ def registrar_movimentacao(codigo_produto, tipo, quantidade, pedido="", observac
     return enviar_para_apps_script(payload)
 
 
-def registrar_saida_kit(pedido, tipo_saida, tipo_monzi, itens):
+def registrar_saida_kit(pedido, tipo_saida, tipo_monzi, itens, observacao=""):
     itens_payload = []
 
     for item in itens:
@@ -1117,6 +1117,7 @@ def registrar_saida_kit(pedido, tipo_saida, tipo_monzi, itens):
         "pedido": pedido,
         "tipo_saida": str(tipo_saida).strip().upper(),
         "tipo_monzi": tipo_monzi,
+        "observacao": str(observacao or "").strip(),
         "itens": itens_payload,
         "criado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     }
@@ -1432,7 +1433,8 @@ if st.session_state["saida_processando"] is not None:
                 pedido=saida["pedido"],
                 tipo_saida=saida["tipo_saida"],
                 tipo_monzi=saida["tipo_monzi"],
-                itens=saida["itens"]
+                itens=saida["itens"],
+                observacao=saida.get("observacao", "")
             )
 
         st.session_state["mensagem_sucesso"] = "Saída registrada com sucesso."
@@ -1946,6 +1948,11 @@ if st.session_state["confirmar_saida"] is not None:
         st.write(f"**Tipo de Monzi:** {saida['tipo_monzi']}")
     else:
         st.write("**Tipo de Monzi:** Não se aplica")
+
+    if saida.get("observacao"):
+        st.write(f"**Observação:** {saida['observacao']}")
+    else:
+        st.write("**Observação:** Não informada")
 
     df_saida_confirmacao = pd.DataFrame(saida["itens"])
 
@@ -2651,6 +2658,13 @@ try:
                 key=f"pedido_saida_{st.session_state['reset_saida']}"
             )
 
+            observacao_saida = st.text_area(
+                "Observação",
+                placeholder="Campo opcional",
+                value=rascunho_saida.get("observacao", ""),
+                key=f"observacao_saida_{st.session_state['reset_saida']}"
+            )
+
             ajustes_checklist = {}
             df_itens_outros_editor = None
             df_extras_editor = None
@@ -2811,6 +2825,7 @@ try:
                 "pedido": pedido_saida.strip(),
                 "tipo_saida": tipo_saida,
                 "tipo_monzi": tipo_monzi,
+                "observacao": observacao_saida.strip(),
                 "ajustes_checklist": ajustes_padrao,
                 "produtos_extras": []
             }
@@ -2923,6 +2938,7 @@ try:
                             "pedido": pedido_saida.strip(),
                             "tipo_saida": tipo_saida,
                             "tipo_monzi": tipo_monzi,
+                            "observacao": observacao_saida.strip(),
                             "ajustes_checklist": ajustes_checklist,
                             "produtos_extras": produtos_manuais if tipo_saida == "OUTROS" else produtos_extras,
                             "itens": df_saida.to_dict("records")
@@ -2939,6 +2955,7 @@ try:
                         "pedido": pedido_saida.strip(),
                         "tipo_saida": tipo_saida,
                         "tipo_monzi": tipo_monzi,
+                        "observacao": observacao_saida.strip(),
                         "ajustes_checklist": {},
                         "produtos_extras": produtos_manuais
                     }
@@ -2971,6 +2988,7 @@ try:
                         "pedido": pedido_saida.strip(),
                         "tipo_saida": tipo_saida,
                         "tipo_monzi": tipo_monzi,
+                        "observacao": observacao_saida.strip(),
                         "ajustes_checklist": ajustes_checklist,
                         "produtos_extras": produtos_extras_rascunho_erro
                     }
