@@ -1106,7 +1106,8 @@ def registrar_saida_kit(pedido, tipo_saida, tipo_monzi, itens, observacao=""):
 
         itens_payload.append({
             "codigo_produto": str(item["codigo_produto"]),
-            "quantidade": quantidade
+            "quantidade": quantidade,
+            "observacao": str(item.get("observacao", "") or "").strip()
         })
 
     if not itens_payload:
@@ -1713,6 +1714,7 @@ if st.session_state["confirmar_avaria"] is not None:
             "quantidade": "Quantidade",
             "estoque_atual": "Estoque Atual",
             "saldo_apos_saida": "Saldo Após Saída",
+            "observacao": "Observação",
             "status": "Status"
         })
 
@@ -1949,10 +1951,6 @@ if st.session_state["confirmar_saida"] is not None:
     else:
         st.write("**Tipo de Monzi:** Não se aplica")
 
-    if saida.get("observacao"):
-        st.write(f"**Observação:** {saida['observacao']}")
-    else:
-        st.write("**Observação:** Não informada")
 
     df_saida_confirmacao = pd.DataFrame(saida["itens"])
 
@@ -1974,6 +1972,7 @@ if st.session_state["confirmar_saida"] is not None:
             "quantidade": "Quantidade Necessária",
             "estoque_atual": "Estoque Atual",
             "saldo_apos_saida": "Saldo Após Saída",
+            "observacao": "Observação",
             "status": "Status"
         })
 
@@ -1984,6 +1983,7 @@ if st.session_state["confirmar_saida"] is not None:
             "Unidade",
             "Estoque Atual",
             "Saldo Após Saída",
+            "Observação",
             "Status"
         ]
 
@@ -2022,7 +2022,7 @@ if st.session_state["confirmar_saida"] is not None:
             hide_index=True
         )
 
-    if saida.get("produtos_extras"):
+    if str(saida.get("tipo_saida", "")).strip().upper() != "OUTROS" and saida.get("produtos_extras"):
         st.markdown("### Produtos extras")
         df_extras_confirmacao = pd.DataFrame(saida["produtos_extras"])
         if not df_extras_confirmacao.empty:
@@ -2658,12 +2658,7 @@ try:
                 key=f"pedido_saida_{st.session_state['reset_saida']}"
             )
 
-            observacao_saida = st.text_area(
-                "Observação",
-                placeholder="Campo opcional",
-                value=rascunho_saida.get("observacao", ""),
-                key=f"observacao_saida_{st.session_state['reset_saida']}"
-            )
+            observacao_saida = ""
 
             ajustes_checklist = {}
             df_itens_outros_editor = None
@@ -2682,6 +2677,7 @@ try:
                     codigo_rascunho = str(item_rascunho.get("codigo_produto", "")).strip()
                     nome_rascunho = str(item_rascunho.get("produto", "")).strip()
                     quantidade_rascunho = item_rascunho.get("quantidade", 0)
+                    observacao_rascunho = str(item_rascunho.get("observacao", "") or "")
 
                     produto_opcao_rascunho = ""
                     if codigo_rascunho and nome_rascunho:
@@ -2689,11 +2685,12 @@ try:
 
                     itens_outros_rascunho.append({
                         "Produto": produto_opcao_rascunho,
-                        "Quantidade": quantidade_rascunho
+                        "Quantidade": quantidade_rascunho,
+                        "Observação": observacao_rascunho
                     })
 
                 if not itens_outros_rascunho:
-                    itens_outros_rascunho = [{"Produto": "", "Quantidade": 0}]
+                    itens_outros_rascunho = [{"Produto": "", "Quantidade": 0, "Observação": ""}]
 
                 df_itens_outros_editor = st.data_editor(
                     pd.DataFrame(itens_outros_rascunho),
@@ -2712,6 +2709,10 @@ try:
                             step=1,
                             default=0,
                             required=False
+                        ),
+                        "Observação": st.column_config.TextColumn(
+                            "Observação",
+                            help="Campo opcional"
                         )
                     },
                     key=f"itens_outros_editor_{st.session_state['reset_saida']}"
@@ -2844,6 +2845,7 @@ try:
                 for _, linha_item in df_itens_outros_editor.iterrows():
                     produto_item = str(linha_item.get("Produto", "") or "").strip()
                     quantidade_item = linha_item.get("Quantidade", 0)
+                    observacao_item = str(linha_item.get("Observação", "") or "").strip()
 
                     try:
                         quantidade_item = float(quantidade_item or 0)
@@ -2859,7 +2861,8 @@ try:
                     produtos_manuais.append({
                         "codigo_produto": codigo_item,
                         "produto": nome_item,
-                        "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item
+                        "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
+                        "observacao": observacao_item
                     })
 
             if not pedido_saida.strip():
@@ -2878,6 +2881,27 @@ try:
                         produtos_extras=produtos_manuais,
                         produtos=produtos
                     )
+
+                    observacoes_por_codigo = {}
+                    for item_manual in produtos_manuais:
+                        codigo_observacao = str(item_manual.get("codigo_produto", "")).strip()
+                        observacao_manual = str(item_manual.get("observacao", "") or "").strip()
+
+                        if not codigo_observacao:
+                            continue
+
+                        if observacao_manual:
+                            observacoes_por_codigo.setdefault(codigo_observacao, [])
+                            if observacao_manual not in observacoes_por_codigo[codigo_observacao]:
+                                observacoes_por_codigo[codigo_observacao].append(observacao_manual)
+                        else:
+                            observacoes_por_codigo.setdefault(codigo_observacao, [])
+
+                    if not df_saida.empty:
+                        df_saida["observacao"] = df_saida["codigo_produto"].astype(str).map(
+                            lambda codigo: " | ".join(observacoes_por_codigo.get(str(codigo), []))
+                        )
+
                     produtos_extras = []
                 else:
                     df_saida = montar_saida(
