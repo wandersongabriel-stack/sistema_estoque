@@ -1085,7 +1085,7 @@ def registrar_movimentacao(codigo_produto, tipo, quantidade, pedido="", observac
         "tipo": tipo,
         "pedido": pedido,
         "quantidade": quantidade,
-        "observacao": observacao,
+        "observacao": str(observacao or "").strip(),
         "criado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     }
 
@@ -1104,10 +1104,17 @@ def registrar_saida_kit(pedido, tipo_saida, tipo_monzi, itens, observacao=""):
         if quantidade.is_integer():
             quantidade = int(quantidade)
 
+        observacao_item = (
+            item.get("observacao", "")
+            or item.get("Observação", "")
+            or item.get("observacao_item", "")
+            or ""
+        )
+
         itens_payload.append({
             "codigo_produto": str(item["codigo_produto"]),
             "quantidade": quantidade,
-            "observacao": str(item.get("observacao", "") or "").strip()
+            "observacao": str(observacao_item or "").strip()
         })
 
     if not itens_payload:
