@@ -1420,7 +1420,7 @@ def remover_linha_produto_form(chave, indice, incluir_observacao=False):
     limpar_widgets_linhas_produto_form(chave)
 
 
-def renderizar_linhas_produto_form(chave, opcoes_produtos, incluir_observacao=False):
+def renderizar_linhas_produto_form(chave, opcoes_produtos, incluir_observacao=False, usar_submit=False):
     linhas = st.session_state.get(chave, [])
 
     if not linhas:
@@ -1428,6 +1428,7 @@ def renderizar_linhas_produto_form(chave, opcoes_produtos, incluir_observacao=Fa
         linhas = st.session_state.get(chave, [])
 
     linhas_renderizadas = []
+    acao_linhas = None
 
     for indice, linha in enumerate(linhas):
         st.markdown(f"**Item {indice + 1}**")
@@ -1486,14 +1487,25 @@ def renderizar_linhas_produto_form(chave, opcoes_produtos, incluir_observacao=Fa
                 )
 
         with col_remover:
-            st.button(
-                "Remover",
-                key=f"{chave}_remover_{indice}",
-                disabled=len(linhas) <= 1,
-                on_click=remover_linha_produto_form,
-                args=(chave, indice, incluir_observacao),
-                use_container_width=True
-            )
+            if usar_submit:
+                remover_clicado = st.form_submit_button(
+                    "Remover",
+                    key=f"{chave}_remover_{indice}",
+                    disabled=len(linhas) <= 1,
+                    use_container_width=True
+                )
+
+                if remover_clicado:
+                    acao_linhas = {"tipo": "remover", "indice": indice}
+            else:
+                st.button(
+                    "Remover",
+                    key=f"{chave}_remover_{indice}",
+                    disabled=len(linhas) <= 1,
+                    on_click=remover_linha_produto_form,
+                    args=(chave, indice, incluir_observacao),
+                    use_container_width=True
+                )
 
         linha_renderizada = {
             "Produto": produto,
@@ -1507,15 +1519,47 @@ def renderizar_linhas_produto_form(chave, opcoes_produtos, incluir_observacao=Fa
 
     col_add_esq, col_add_centro, col_add_dir = st.columns([4, 1, 4])
     with col_add_centro:
-        st.button(
-            "+ Adicionar item",
-            key=f"{chave}_adicionar",
-            on_click=adicionar_linha_produto_form,
-            args=(chave, incluir_observacao),
-            use_container_width=True
-        )
+        if usar_submit:
+            adicionar_clicado = st.form_submit_button(
+                "+ Adicionar item",
+                key=f"{chave}_adicionar",
+                use_container_width=True
+            )
+
+            if adicionar_clicado:
+                acao_linhas = {"tipo": "adicionar"}
+        else:
+            st.button(
+                "+ Adicionar item",
+                key=f"{chave}_adicionar",
+                on_click=adicionar_linha_produto_form,
+                args=(chave, incluir_observacao),
+                use_container_width=True
+            )
+
+    if usar_submit:
+        return linhas_renderizadas, acao_linhas
 
     return linhas_renderizadas
+
+
+def aplicar_acao_linhas_produto_form(chave, acao_linhas, incluir_observacao=False):
+    if not acao_linhas:
+        return False
+
+    if acao_linhas.get("tipo") == "adicionar":
+        adicionar_linha_produto_form(chave, incluir_observacao)
+        return True
+
+    if acao_linhas.get("tipo") == "remover":
+        remover_linha_produto_form(
+            chave,
+            int(acao_linhas.get("indice", 0)),
+            incluir_observacao
+        )
+        return True
+
+    return False
 
 
 def extrair_itens_linhas_produto(linhas, mensagem_produto, mensagem_quantidade, incluir_observacao=False):
@@ -2648,25 +2692,34 @@ try:
                 incluir_observacao=True
             )
 
-            st.caption(
-                "Adicione uma linha para cada produto que entrará no estoque. "
-                "Use o botão + Adicionar item para criar novas linhas."
-            )
-
-            linhas_entrada = renderizar_linhas_produto_form(
-                chave_linhas_entrada,
-                opcoes_produtos_entrada,
-                incluir_observacao=True
-            )
-
-            col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
-
-            with col_direita:
-                botao_entrada = st.button(
-                    "Registrar entrada",
-                    disabled=st.session_state["bloqueado"],
-                    use_container_width=True
+            with st.form(f"form_entrada_produtos_{st.session_state['reset_entrada']}"):
+                st.caption(
+                    "Adicione uma linha para cada produto que entrará no estoque. "
+                    "Use o botão + Adicionar item para criar novas linhas."
                 )
+
+                linhas_entrada, acao_linhas_entrada = renderizar_linhas_produto_form(
+                    chave_linhas_entrada,
+                    opcoes_produtos_entrada,
+                    incluir_observacao=True,
+                    usar_submit=True
+                )
+
+                col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
+
+                with col_direita:
+                    botao_entrada = st.form_submit_button(
+                        "Registrar entrada",
+                        disabled=st.session_state["bloqueado"],
+                        use_container_width=True
+                    )
+
+            if aplicar_acao_linhas_produto_form(
+                chave_linhas_entrada,
+                acao_linhas_entrada,
+                incluir_observacao=True
+            ):
+                st.rerun()
 
             if botao_entrada:
                 itens_entrada = extrair_itens_linhas_produto(
@@ -2708,31 +2761,40 @@ try:
                 incluir_observacao=False
             )
 
-            st.caption(
-                "Registre saídas por avaria item por item. "
-                "O motivo é obrigatório e será gravado na observação das movimentações."
-            )
-
-            motivo_avaria = st.text_area(
-                "Motivo da avaria",
-                placeholder="Ex: produto danificado, embalagem rasgada, item quebrado...",
-                key=f"motivo_avaria_{st.session_state['reset_avaria']}"
-            )
-
-            linhas_avaria = renderizar_linhas_produto_form(
-                chave_linhas_avaria,
-                opcoes_produtos_avaria,
-                incluir_observacao=False
-            )
-
-            col_vazio_esq, col_centro, col_vazio_dir = st.columns([4, 1, 4])
-
-            with col_centro:
-                botao_avaria = st.button(
-                    "Registrar avaria",
-                    disabled=st.session_state["bloqueado"],
-                    use_container_width=True
+            with st.form(f"form_avaria_{st.session_state['reset_avaria']}"):
+                st.caption(
+                    "Registre saídas por avaria item por item. "
+                    "O motivo é obrigatório e será gravado na observação das movimentações."
                 )
+
+                motivo_avaria = st.text_area(
+                    "Motivo da avaria",
+                    placeholder="Ex: produto danificado, embalagem rasgada, item quebrado...",
+                    key=f"motivo_avaria_{st.session_state['reset_avaria']}"
+                )
+
+                linhas_avaria, acao_linhas_avaria = renderizar_linhas_produto_form(
+                    chave_linhas_avaria,
+                    opcoes_produtos_avaria,
+                    incluir_observacao=False,
+                    usar_submit=True
+                )
+
+                col_vazio_esq, col_centro, col_vazio_dir = st.columns([4, 1, 4])
+
+                with col_centro:
+                    botao_avaria = st.form_submit_button(
+                        "Registrar avaria",
+                        disabled=st.session_state["bloqueado"],
+                        use_container_width=True
+                    )
+
+            if aplicar_acao_linhas_produto_form(
+                chave_linhas_avaria,
+                acao_linhas_avaria,
+                incluir_observacao=False
+            ):
+                st.rerun()
 
             if botao_avaria:
                 motivo_avaria = str(motivo_avaria or "").strip()
@@ -2827,141 +2889,164 @@ try:
                     on_change=limpar_simulacao_saida
                 )
 
-        pedido_saida = st.text_input(
-            "Número do pedido",
-            placeholder="Ex: PED123",
-            value=rascunho_saida.get("pedido", ""),
-            key=f"pedido_saida_{st.session_state['reset_saida']}"
-        )
-
         observacao_saida = ""
         ajustes_checklist = {}
         produtos_manuais = []
         produtos_extras = []
+        acao_linhas_outros = None
+        acao_linhas_extras = None
+        linhas_outros = []
+        linhas_extras = []
+        botao_confirmar_saida = False
+        botao_restaurar_padrao_saida = False
+        chave_linhas_outros = f"linhas_saida_outros_{st.session_state['reset_saida']}"
+        chave_linhas_extras = f"linhas_saida_extras_{st.session_state['reset_saida']}"
 
-        if tipo_saida == "OUTROS":
-            st.markdown("### Itens da saída")
-            st.caption(
-                "Adicione os produtos que serão baixados manualmente. "
-                "Use o botão + Adicionar item para criar novas linhas."
+        with st.form(f"form_saida_produtos_{tipo_saida}_{tipo_monzi}_{st.session_state['reset_saida']}"):
+            pedido_saida = st.text_input(
+                "Número do pedido",
+                placeholder="Ex: PED123",
+                value=rascunho_saida.get("pedido", ""),
+                key=f"pedido_saida_{st.session_state['reset_saida']}"
             )
 
-            itens_outros_rascunho = []
-
-            for item_rascunho in rascunho_saida.get("produtos_extras", []):
-                codigo_rascunho = str(item_rascunho.get("codigo_produto", "")).strip()
-                nome_rascunho = str(item_rascunho.get("produto", "")).strip()
-                quantidade_rascunho = item_rascunho.get("quantidade", 0)
-                observacao_rascunho = str(item_rascunho.get("observacao", "") or "")
-
-                produto_opcao_rascunho = ""
-                if codigo_rascunho and nome_rascunho:
-                    produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
-
-                itens_outros_rascunho.append({
-                    "Produto": produto_opcao_rascunho,
-                    "Quantidade": quantidade_rascunho,
-                    "Observação": observacao_rascunho
-                })
-
-            chave_linhas_outros = f"linhas_saida_outros_{st.session_state['reset_saida']}"
-            inicializar_linhas_produto_form(
-                chave_linhas_outros,
-                linhas_iniciais=itens_outros_rascunho,
-                incluir_observacao=True
-            )
-
-            linhas_outros = renderizar_linhas_produto_form(
-                chave_linhas_outros,
-                opcoes_produtos_saida,
-                incluir_observacao=True
-            )
-
-            col_botao_esquerda, col_botao_confirmar, col_botao_direita = st.columns([2, 1, 2])
-
-            with col_botao_confirmar:
-                botao_confirmar_saida = st.button(
-                    "Confirmar saída",
-                    disabled=st.session_state["bloqueado"],
-                    use_container_width=True
+            if tipo_saida == "OUTROS":
+                st.markdown("### Itens da saída")
+                st.caption(
+                    "Adicione os produtos que serão baixados manualmente. "
+                    "Use o botão + Adicionar item para criar novas linhas."
                 )
 
-            botao_restaurar_padrao_saida = False
+                itens_outros_rascunho = []
 
-        else:
-            st.markdown(f"### Ajustes da {tipo_saida.lower()}")
-            st.caption(
-                "Altere a quantidade final de cada item somente quando o pedido for diferente do padrão. "
-                "Exemplo: na ILHA, Blocos cupons já vem com 6 como padrão; se trocar para 5, o sistema baixa 5 blocos."
-            )
+                for item_rascunho in rascunho_saida.get("produtos_extras", []):
+                    codigo_rascunho = str(item_rascunho.get("codigo_produto", "")).strip()
+                    nome_rascunho = str(item_rascunho.get("produto", "")).strip()
+                    quantidade_rascunho = item_rascunho.get("quantidade", 0)
+                    observacao_rascunho = str(item_rascunho.get("observacao", "") or "")
 
-            definicoes_checklist = obter_definicoes_checklist(tipo_saida, tipo_monzi)
-            colunas_ajustes = st.columns(3)
+                    produto_opcao_rascunho = ""
+                    if codigo_rascunho and nome_rascunho:
+                        produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
 
-            for indice_def, definicao in enumerate(definicoes_checklist):
-                coluna_atual = colunas_ajustes[indice_def % 3]
+                    itens_outros_rascunho.append({
+                        "Produto": produto_opcao_rascunho,
+                        "Quantidade": quantidade_rascunho,
+                        "Observação": observacao_rascunho
+                    })
 
-                with coluna_atual:
-                    ajustes_rascunho = rascunho_saida.get("ajustes_checklist", {})
+                inicializar_linhas_produto_form(
+                    chave_linhas_outros,
+                    linhas_iniciais=itens_outros_rascunho,
+                    incluir_observacao=True
+                )
 
-                    ajustes_checklist[definicao["chave"]] = st.number_input(
-                        definicao["grupo"],
-                        min_value=0,
-                        step=1,
-                        value=int(ajustes_rascunho.get(definicao["chave"], definicao["padrao"])),
-                        key=f"ajuste_{tipo_saida}_{tipo_monzi}_{definicao['chave']}_{st.session_state['reset_saida']}"
+                linhas_outros, acao_linhas_outros = renderizar_linhas_produto_form(
+                    chave_linhas_outros,
+                    opcoes_produtos_saida,
+                    incluir_observacao=True,
+                    usar_submit=True
+                )
+
+                col_botao_esquerda, col_botao_confirmar, col_botao_direita = st.columns([2, 1, 2])
+
+                with col_botao_confirmar:
+                    botao_confirmar_saida = st.form_submit_button(
+                        "Confirmar saída",
+                        disabled=st.session_state["bloqueado"],
+                        use_container_width=True
                     )
 
-            st.markdown("### Produtos extras da saída")
-            st.caption(
-                "Adicione quantos produtos extras forem necessários. "
-                "Se o produto já existir na saída, a quantidade será somada."
-            )
+                botao_restaurar_padrao_saida = False
 
-            produtos_extras_rascunho = []
-
-            for extra in rascunho_saida.get("produtos_extras", []):
-                codigo_extra_rascunho = str(extra.get("codigo_produto", "")).strip()
-                nome_extra_rascunho = str(extra.get("produto", "")).strip()
-                quantidade_extra_rascunho = extra.get("quantidade", 0)
-
-                produto_opcao_rascunho = ""
-                if codigo_extra_rascunho and nome_extra_rascunho:
-                    produto_opcao_rascunho = f"{codigo_extra_rascunho} - {nome_extra_rascunho}"
-
-                produtos_extras_rascunho.append({
-                    "Produto": produto_opcao_rascunho,
-                    "Quantidade": quantidade_extra_rascunho
-                })
-
-            chave_linhas_extras = f"linhas_saida_extras_{st.session_state['reset_saida']}"
-            inicializar_linhas_produto_form(
-                chave_linhas_extras,
-                linhas_iniciais=produtos_extras_rascunho,
-                incluir_observacao=False
-            )
-
-            linhas_extras = renderizar_linhas_produto_form(
-                chave_linhas_extras,
-                opcoes_produtos_saida,
-                incluir_observacao=False
-            )
-
-            col_botao_esquerda, col_botao_confirmar, col_botao_restaurar, col_botao_direita = st.columns([2, 1, 1, 2])
-
-            with col_botao_confirmar:
-                botao_confirmar_saida = st.button(
-                    "Confirmar saída",
-                    disabled=st.session_state["bloqueado"],
-                    use_container_width=True
+            else:
+                st.markdown(f"### Ajustes da {tipo_saida.lower()}")
+                st.caption(
+                    "Altere a quantidade final de cada item somente quando o pedido for diferente do padrão. "
+                    "Exemplo: na ILHA, Blocos cupons já vem com 6 como padrão; se trocar para 5, o sistema baixa 5 blocos."
                 )
 
-            with col_botao_restaurar:
-                botao_restaurar_padrao_saida = st.button(
-                    "Restaurar padrão torre/ilha",
-                    disabled=st.session_state["bloqueado"],
-                    use_container_width=True
+                definicoes_checklist = obter_definicoes_checklist(tipo_saida, tipo_monzi)
+                colunas_ajustes = st.columns(3)
+
+                for indice_def, definicao in enumerate(definicoes_checklist):
+                    coluna_atual = colunas_ajustes[indice_def % 3]
+
+                    with coluna_atual:
+                        ajustes_rascunho = rascunho_saida.get("ajustes_checklist", {})
+
+                        ajustes_checklist[definicao["chave"]] = st.number_input(
+                            definicao["grupo"],
+                            min_value=0,
+                            step=1,
+                            value=int(ajustes_rascunho.get(definicao["chave"], definicao["padrao"])),
+                            key=f"ajuste_{tipo_saida}_{tipo_monzi}_{definicao['chave']}_{st.session_state['reset_saida']}"
+                        )
+
+                st.markdown("### Produtos extras da saída")
+                st.caption(
+                    "Adicione quantos produtos extras forem necessários. "
+                    "Se o produto já existir na saída, a quantidade será somada."
                 )
+
+                produtos_extras_rascunho = []
+
+                for extra in rascunho_saida.get("produtos_extras", []):
+                    codigo_extra_rascunho = str(extra.get("codigo_produto", "")).strip()
+                    nome_extra_rascunho = str(extra.get("produto", "")).strip()
+                    quantidade_extra_rascunho = extra.get("quantidade", 0)
+
+                    produto_opcao_rascunho = ""
+                    if codigo_extra_rascunho and nome_extra_rascunho:
+                        produto_opcao_rascunho = f"{codigo_extra_rascunho} - {nome_extra_rascunho}"
+
+                    produtos_extras_rascunho.append({
+                        "Produto": produto_opcao_rascunho,
+                        "Quantidade": quantidade_extra_rascunho
+                    })
+
+                inicializar_linhas_produto_form(
+                    chave_linhas_extras,
+                    linhas_iniciais=produtos_extras_rascunho,
+                    incluir_observacao=False
+                )
+
+                linhas_extras, acao_linhas_extras = renderizar_linhas_produto_form(
+                    chave_linhas_extras,
+                    opcoes_produtos_saida,
+                    incluir_observacao=False,
+                    usar_submit=True
+                )
+
+                col_botao_esquerda, col_botao_confirmar, col_botao_restaurar, col_botao_direita = st.columns([2, 1, 1, 2])
+
+                with col_botao_confirmar:
+                    botao_confirmar_saida = st.form_submit_button(
+                        "Confirmar saída",
+                        disabled=st.session_state["bloqueado"],
+                        use_container_width=True
+                    )
+
+                with col_botao_restaurar:
+                    botao_restaurar_padrao_saida = st.form_submit_button(
+                        "Restaurar padrão torre/ilha",
+                        disabled=st.session_state["bloqueado"],
+                        use_container_width=True
+                    )
+
+        if tipo_saida == "OUTROS" and aplicar_acao_linhas_produto_form(
+            chave_linhas_outros,
+            acao_linhas_outros,
+            incluir_observacao=True
+        ):
+            st.rerun()
+
+        if tipo_saida != "OUTROS" and aplicar_acao_linhas_produto_form(
+            chave_linhas_extras,
+            acao_linhas_extras,
+            incluir_observacao=False
+        ):
+            st.rerun()
 
         if tipo_saida != "OUTROS" and botao_restaurar_padrao_saida:
             ajustes_padrao = {
@@ -3002,7 +3087,6 @@ try:
                     incluir_observacao=False
                 )
 
-                # Linhas extras totalmente vazias são ignoradas. Se não houver extras, a lista fica vazia.
                 produtos_extras = [
                     {
                         "codigo_produto": item["codigo_produto"],
