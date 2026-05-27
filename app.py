@@ -27,7 +27,7 @@ def aplicar_estilo_botoes_centralizados():
 
             div.stButton > button,
             div.stFormSubmitButton > button {
-                min-width: 200px;
+                min-width: 160px;
             }
         </style>
         """,
