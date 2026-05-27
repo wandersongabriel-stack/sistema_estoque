@@ -1085,7 +1085,7 @@ def registrar_movimentacao(codigo_produto, tipo, quantidade, pedido="", observac
         "tipo": tipo,
         "pedido": pedido,
         "quantidade": quantidade,
-        "observacao": str(observacao or "").strip(),
+        "observacao": observacao,
         "criado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     }
 
@@ -1104,17 +1104,10 @@ def registrar_saida_kit(pedido, tipo_saida, tipo_monzi, itens, observacao=""):
         if quantidade.is_integer():
             quantidade = int(quantidade)
 
-        observacao_item = (
-            item.get("observacao", "")
-            or item.get("Observação", "")
-            or item.get("observacao_item", "")
-            or ""
-        )
-
         itens_payload.append({
             "codigo_produto": str(item["codigo_produto"]),
             "quantidade": quantidade,
-            "observacao": str(observacao_item or "").strip()
+            "observacao": str(item.get("observacao", "") or "").strip()
         })
 
     if not itens_payload:
@@ -1330,6 +1323,241 @@ def limpar_simulacao_saida():
     st.session_state["rascunho_saida"] = None
     st.session_state["reset_saida"] += 1
     st.session_state["bloqueado"] = False
+
+
+def normalizar_linha_produto_form(linha=None, incluir_observacao=False):
+    linha = linha or {}
+
+    linha_normalizada = {
+        "Produto": str(linha.get("Produto", "") or ""),
+        "Quantidade": linha.get("Quantidade", 0) or 0,
+    }
+
+    if incluir_observacao:
+        linha_normalizada["Observação"] = str(linha.get("Observação", "") or "")
+
+    return linha_normalizada
+
+
+def inicializar_linhas_produto_form(chave, linhas_iniciais=None, incluir_observacao=False):
+    if chave in st.session_state:
+        return
+
+    linhas = []
+
+    if linhas_iniciais:
+        for linha in linhas_iniciais:
+            linhas.append(normalizar_linha_produto_form(linha, incluir_observacao))
+
+    if not linhas:
+        linhas = [normalizar_linha_produto_form(incluir_observacao=incluir_observacao)]
+
+    st.session_state[chave] = linhas
+
+
+def limpar_widgets_linhas_produto_form(chave):
+    prefixos = [
+        f"{chave}_produto_",
+        f"{chave}_quantidade_",
+        f"{chave}_observacao_",
+        f"{chave}_remover_",
+    ]
+
+    for chave_estado in list(st.session_state.keys()):
+        if any(str(chave_estado).startswith(prefixo) for prefixo in prefixos):
+            del st.session_state[chave_estado]
+
+
+def sincronizar_linhas_produto_form(chave, incluir_observacao=False):
+    linhas_atualizadas = []
+    linhas = st.session_state.get(chave, [])
+
+    for indice, linha in enumerate(linhas):
+        produto = st.session_state.get(
+            f"{chave}_produto_{indice}",
+            linha.get("Produto", "")
+        )
+        quantidade = st.session_state.get(
+            f"{chave}_quantidade_{indice}",
+            linha.get("Quantidade", 0)
+        )
+
+        linha_atualizada = {
+            "Produto": produto,
+            "Quantidade": quantidade,
+        }
+
+        if incluir_observacao:
+            linha_atualizada["Observação"] = st.session_state.get(
+                f"{chave}_observacao_{indice}",
+                linha.get("Observação", "")
+            )
+
+        linhas_atualizadas.append(linha_atualizada)
+
+    st.session_state[chave] = linhas_atualizadas
+    return linhas_atualizadas
+
+
+def adicionar_linha_produto_form(chave, incluir_observacao=False):
+    sincronizar_linhas_produto_form(chave, incluir_observacao)
+    st.session_state[chave].append(
+        normalizar_linha_produto_form(incluir_observacao=incluir_observacao)
+    )
+    limpar_widgets_linhas_produto_form(chave)
+
+
+def remover_linha_produto_form(chave, indice, incluir_observacao=False):
+    linhas = sincronizar_linhas_produto_form(chave, incluir_observacao)
+
+    if 0 <= indice < len(linhas):
+        linhas.pop(indice)
+
+    if not linhas:
+        linhas = [normalizar_linha_produto_form(incluir_observacao=incluir_observacao)]
+
+    st.session_state[chave] = linhas
+    limpar_widgets_linhas_produto_form(chave)
+
+
+def renderizar_linhas_produto_form(chave, opcoes_produtos, incluir_observacao=False):
+    linhas = st.session_state.get(chave, [])
+
+    if not linhas:
+        inicializar_linhas_produto_form(chave, incluir_observacao=incluir_observacao)
+        linhas = st.session_state.get(chave, [])
+
+    linhas_renderizadas = []
+
+    for indice, linha in enumerate(linhas):
+        st.markdown(f"**Item {indice + 1}**")
+
+        if incluir_observacao:
+            col_produto, col_quantidade, col_observacao, col_remover = st.columns([4, 1.2, 3, 0.7])
+        else:
+            col_produto, col_quantidade, col_remover = st.columns([5, 1.4, 0.7])
+            col_observacao = None
+
+        produto_key = f"{chave}_produto_{indice}"
+        quantidade_key = f"{chave}_quantidade_{indice}"
+        observacao_key = f"{chave}_observacao_{indice}"
+
+        produto_padrao = str(linha.get("Produto", "") or "")
+        if produto_padrao not in opcoes_produtos:
+            produto_padrao = ""
+
+        if produto_key not in st.session_state:
+            st.session_state[produto_key] = produto_padrao
+
+        if quantidade_key not in st.session_state:
+            try:
+                st.session_state[quantidade_key] = int(float(linha.get("Quantidade", 0) or 0))
+            except Exception:
+                st.session_state[quantidade_key] = 0
+
+        with col_produto:
+            produto = st.selectbox(
+                "Produto",
+                opcoes_produtos,
+                key=produto_key,
+                label_visibility="collapsed"
+            )
+
+        with col_quantidade:
+            quantidade = st.number_input(
+                "Quantidade",
+                min_value=0,
+                step=1,
+                key=quantidade_key,
+                label_visibility="collapsed"
+            )
+
+        observacao = ""
+        if incluir_observacao and col_observacao is not None:
+            if observacao_key not in st.session_state:
+                st.session_state[observacao_key] = str(linha.get("Observação", "") or "")
+
+            with col_observacao:
+                observacao = st.text_input(
+                    "Observação",
+                    key=observacao_key,
+                    placeholder="Observação opcional",
+                    label_visibility="collapsed"
+                )
+
+        with col_remover:
+            st.button(
+                "Remover",
+                key=f"{chave}_remover_{indice}",
+                disabled=len(linhas) <= 1,
+                on_click=remover_linha_produto_form,
+                args=(chave, indice, incluir_observacao),
+                use_container_width=True
+            )
+
+        linha_renderizada = {
+            "Produto": produto,
+            "Quantidade": quantidade,
+        }
+
+        if incluir_observacao:
+            linha_renderizada["Observação"] = observacao
+
+        linhas_renderizadas.append(linha_renderizada)
+
+    col_add_esq, col_add_centro, col_add_dir = st.columns([4, 1, 4])
+    with col_add_centro:
+        st.button(
+            "+ Adicionar item",
+            key=f"{chave}_adicionar",
+            on_click=adicionar_linha_produto_form,
+            args=(chave, incluir_observacao),
+            use_container_width=True
+        )
+
+    return linhas_renderizadas
+
+
+def extrair_itens_linhas_produto(linhas, mensagem_produto, mensagem_quantidade, incluir_observacao=False):
+    itens = []
+
+    for linha in linhas:
+        produto = str(linha.get("Produto", "") or "").strip()
+        quantidade = linha.get("Quantidade", 0)
+        observacao = str(linha.get("Observação", "") or "").strip()
+
+        try:
+            quantidade = float(quantidade or 0)
+        except Exception:
+            quantidade = 0
+
+        if not produto and quantidade <= 0 and not observacao:
+            continue
+
+        if not produto:
+            exibir_alerta_temporario(mensagem_produto, tipo="error")
+            st.stop()
+
+        if quantidade <= 0:
+            exibir_alerta_temporario(mensagem_quantidade, tipo="error")
+            st.stop()
+
+        codigo_produto = produto.split(" - ")[0]
+        produto_nome = produto.split(" - ", 1)[1] if " - " in produto else produto
+
+        item = {
+            "codigo_produto": codigo_produto,
+            "produto": produto_nome,
+            "produto_nome": produto_nome,
+            "quantidade": int(quantidade) if quantidade.is_integer() else quantidade,
+        }
+
+        if incluir_observacao:
+            item["observacao"] = observacao
+
+        itens.append(item)
+
+    return itens
 
 
 # PROCESSAMENTO DE ENTRADA
@@ -2413,78 +2641,40 @@ try:
             )
 
             opcoes_produtos_entrada = [""] + produtos_ativos["produto_opcao"].tolist()
+            chave_linhas_entrada = f"linhas_entrada_{st.session_state['reset_entrada']}"
 
-            with st.form(f"form_entrada_produtos_{st.session_state['reset_entrada']}"):
-                st.caption(
-                    "Adicione uma linha para cada produto que entrará no estoque. "
-                    "Use o botão de + da tabela para criar novas linhas."
+            inicializar_linhas_produto_form(
+                chave_linhas_entrada,
+                incluir_observacao=True
+            )
+
+            st.caption(
+                "Adicione uma linha para cada produto que entrará no estoque. "
+                "Use o botão + Adicionar item para criar novas linhas."
+            )
+
+            linhas_entrada = renderizar_linhas_produto_form(
+                chave_linhas_entrada,
+                opcoes_produtos_entrada,
+                incluir_observacao=True
+            )
+
+            col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
+
+            with col_direita:
+                botao_entrada = st.button(
+                    "Registrar entrada",
+                    disabled=st.session_state["bloqueado"],
+                    use_container_width=True
                 )
-
-                df_entrada_editor = st.data_editor(
-                    pd.DataFrame([{"Produto": "", "Quantidade": 0, "Observação": ""}]),
-                    use_container_width=True,
-                    hide_index=True,
-                    num_rows="dynamic",
-                    column_config={
-                        "Produto": st.column_config.SelectboxColumn(
-                            "Produto",
-                            options=opcoes_produtos_entrada,
-                            required=False
-                        ),
-                        "Quantidade": st.column_config.NumberColumn(
-                            "Quantidade",
-                            min_value=0,
-                            step=1,
-                            default=0,
-                            required=False
-                        ),
-                        "Observação": st.column_config.TextColumn(
-                            "Observação",
-                            required=False
-                        )
-                    },
-                    key=f"entrada_produtos_editor_{st.session_state['reset_entrada']}"
-                )
-
-                col_vazio_esq, col_direita, col_vazio_dir = st.columns([4, 1, 4])
-
-                with col_direita:
-                    botao_entrada = st.form_submit_button("Registrar entrada")
 
             if botao_entrada:
-                itens_entrada = []
-
-                if df_entrada_editor is not None and not df_entrada_editor.empty:
-                    for _, linha_entrada in df_entrada_editor.iterrows():
-                        produto_entrada = str(linha_entrada.get("Produto", "") or "").strip()
-                        quantidade_entrada = linha_entrada.get("Quantidade", 0)
-                        observacao_entrada = str(linha_entrada.get("Observação", "") or "").strip()
-
-                        try:
-                            quantidade_entrada = float(quantidade_entrada or 0)
-                        except Exception:
-                            quantidade_entrada = 0
-
-                        if not produto_entrada and quantidade_entrada <= 0:
-                            continue
-
-                        if not produto_entrada:
-                            exibir_alerta_temporario("Selecione o produto em todas as linhas preenchidas.", tipo="error")
-                            st.stop()
-
-                        if quantidade_entrada <= 0:
-                            exibir_alerta_temporario("Informe uma quantidade maior que zero em todas as linhas preenchidas.", tipo="error")
-                            st.stop()
-
-                        codigo_produto = produto_entrada.split(" - ")[0]
-                        produto_nome = produto_entrada.split(" - ", 1)[1] if " - " in produto_entrada else produto_entrada
-
-                        itens_entrada.append({
-                            "codigo_produto": codigo_produto,
-                            "produto_nome": produto_nome,
-                            "quantidade": int(quantidade_entrada) if quantidade_entrada.is_integer() else quantidade_entrada,
-                            "observacao": observacao_entrada
-                        })
+                itens_entrada = extrair_itens_linhas_produto(
+                    linhas_entrada,
+                    mensagem_produto="Selecione o produto em todas as linhas preenchidas.",
+                    mensagem_quantidade="Informe uma quantidade maior que zero em todas as linhas preenchidas.",
+                    incluir_observacao=True
+                )
 
                 if not itens_entrada:
                     exibir_alerta_temporario("Informe pelo menos um produto para entrada.", tipo="error")
@@ -2511,44 +2701,38 @@ try:
             opcoes_produtos_avaria = [""] + produtos_ativos["produto_opcao"].tolist()
             produtos_lookup_avaria = produtos_ativos.copy()
             produtos_lookup_avaria["codigo"] = produtos_lookup_avaria["codigo"].astype(str)
+            chave_linhas_avaria = f"linhas_avaria_{st.session_state['reset_avaria']}"
 
-            with st.form(f"form_avaria_produtos_{st.session_state['reset_avaria']}"):
-                st.caption(
-                    "Registre saídas por avaria item por item. O motivo é obrigatório e será gravado na observação das movimentações."
+            inicializar_linhas_produto_form(
+                chave_linhas_avaria,
+                incluir_observacao=False
+            )
+
+            st.caption(
+                "Registre saídas por avaria item por item. "
+                "O motivo é obrigatório e será gravado na observação das movimentações."
+            )
+
+            motivo_avaria = st.text_area(
+                "Motivo da avaria",
+                placeholder="Ex: produto danificado, embalagem rasgada, item quebrado...",
+                key=f"motivo_avaria_{st.session_state['reset_avaria']}"
+            )
+
+            linhas_avaria = renderizar_linhas_produto_form(
+                chave_linhas_avaria,
+                opcoes_produtos_avaria,
+                incluir_observacao=False
+            )
+
+            col_vazio_esq, col_centro, col_vazio_dir = st.columns([4, 1, 4])
+
+            with col_centro:
+                botao_avaria = st.button(
+                    "Registrar avaria",
+                    disabled=st.session_state["bloqueado"],
+                    use_container_width=True
                 )
-
-                motivo_avaria = st.text_area(
-                    "Motivo da avaria",
-                    placeholder="Ex: produto danificado, embalagem rasgada, item quebrado...",
-                    key=f"motivo_avaria_{st.session_state['reset_avaria']}"
-                )
-
-                df_avaria_editor = st.data_editor(
-                    pd.DataFrame([{"Produto": "", "Quantidade": 0}]),
-                    use_container_width=True,
-                    hide_index=True,
-                    num_rows="dynamic",
-                    column_config={
-                        "Produto": st.column_config.SelectboxColumn(
-                            "Produto",
-                            options=opcoes_produtos_avaria,
-                            required=False
-                        ),
-                        "Quantidade": st.column_config.NumberColumn(
-                            "Quantidade",
-                            min_value=0,
-                            step=1,
-                            default=0,
-                            required=False
-                        )
-                    },
-                    key=f"avaria_produtos_editor_{st.session_state['reset_avaria']}"
-                )
-
-                col_vazio_esq, col_centro, col_vazio_dir = st.columns([4, 1, 4])
-
-                with col_centro:
-                    botao_avaria = st.form_submit_button("Registrar avaria")
 
             if botao_avaria:
                 motivo_avaria = str(motivo_avaria or "").strip()
@@ -2557,50 +2741,37 @@ try:
                     exibir_alerta_temporario("Informe o motivo da avaria.", tipo="error")
                     st.stop()
 
+                itens_base_avaria = extrair_itens_linhas_produto(
+                    linhas_avaria,
+                    mensagem_produto="Selecione o produto em todas as linhas preenchidas.",
+                    mensagem_quantidade="Informe uma quantidade maior que zero em todas as linhas preenchidas.",
+                    incluir_observacao=False
+                )
+
                 itens_avaria = []
 
-                if df_avaria_editor is not None and not df_avaria_editor.empty:
-                    for _, linha_avaria in df_avaria_editor.iterrows():
-                        produto_avaria = str(linha_avaria.get("Produto", "") or "").strip()
-                        quantidade_avaria = linha_avaria.get("Quantidade", 0)
+                for item_base in itens_base_avaria:
+                    codigo_produto = item_base["codigo_produto"]
+                    quantidade_avaria = float(item_base["quantidade"] or 0)
 
-                        try:
-                            quantidade_avaria = float(quantidade_avaria or 0)
-                        except Exception:
-                            quantidade_avaria = 0
+                    produto_linha = produtos_lookup_avaria[
+                        produtos_lookup_avaria["codigo"] == str(codigo_produto)
+                    ]
 
-                        if not produto_avaria and quantidade_avaria <= 0:
-                            continue
+                    estoque_atual = 0
+                    if not produto_linha.empty:
+                        estoque_atual = float(produto_linha.iloc[0].get("estoque_atual", 0) or 0)
 
-                        if not produto_avaria:
-                            exibir_alerta_temporario("Selecione o produto em todas as linhas preenchidas.", tipo="error")
-                            st.stop()
+                    saldo_apos_saida = estoque_atual - quantidade_avaria
 
-                        if quantidade_avaria <= 0:
-                            exibir_alerta_temporario("Informe uma quantidade maior que zero em todas as linhas preenchidas.", tipo="error")
-                            st.stop()
-
-                        codigo_produto = produto_avaria.split(" - ")[0]
-                        produto_nome = produto_avaria.split(" - ", 1)[1] if " - " in produto_avaria else produto_avaria
-
-                        produto_linha = produtos_lookup_avaria[
-                            produtos_lookup_avaria["codigo"] == str(codigo_produto)
-                        ]
-
-                        estoque_atual = 0
-                        if not produto_linha.empty:
-                            estoque_atual = float(produto_linha.iloc[0].get("estoque_atual", 0) or 0)
-
-                        saldo_apos_saida = estoque_atual - quantidade_avaria
-
-                        itens_avaria.append({
-                            "codigo_produto": codigo_produto,
-                            "produto_nome": produto_nome,
-                            "quantidade": int(quantidade_avaria) if quantidade_avaria.is_integer() else quantidade_avaria,
-                            "estoque_atual": estoque_atual,
-                            "saldo_apos_saida": saldo_apos_saida,
-                            "status": "INSUFICIENTE" if saldo_apos_saida < 0 else "OK"
-                        })
+                    itens_avaria.append({
+                        "codigo_produto": codigo_produto,
+                        "produto_nome": item_base["produto_nome"],
+                        "quantidade": item_base["quantidade"],
+                        "estoque_atual": estoque_atual,
+                        "saldo_apos_saida": saldo_apos_saida,
+                        "status": "INSUFICIENTE" if saldo_apos_saida < 0 else "OK"
+                    })
 
                 if not itens_avaria:
                     exibir_alerta_temporario("Informe pelo menos um produto para avaria.", tipo="error")
@@ -2612,7 +2783,6 @@ try:
                 }
 
                 st.rerun()
-
 
     elif aba_atual == "Saída de Produtos":
         st.subheader("Saída de Produtos")
@@ -2657,171 +2827,141 @@ try:
                     on_change=limpar_simulacao_saida
                 )
 
-        with st.form(f"form_saida_produtos_{tipo_saida}_{tipo_monzi}_{st.session_state['reset_saida']}"):
-            pedido_saida = st.text_input(
-                "Número do pedido",
-                placeholder="Ex: PED123",
-                value=rascunho_saida.get("pedido", ""),
-                key=f"pedido_saida_{st.session_state['reset_saida']}"
+        pedido_saida = st.text_input(
+            "Número do pedido",
+            placeholder="Ex: PED123",
+            value=rascunho_saida.get("pedido", ""),
+            key=f"pedido_saida_{st.session_state['reset_saida']}"
+        )
+
+        observacao_saida = ""
+        ajustes_checklist = {}
+        produtos_manuais = []
+        produtos_extras = []
+
+        if tipo_saida == "OUTROS":
+            st.markdown("### Itens da saída")
+            st.caption(
+                "Adicione os produtos que serão baixados manualmente. "
+                "Use o botão + Adicionar item para criar novas linhas."
             )
 
-            observacao_saida = ""
+            itens_outros_rascunho = []
 
-            ajustes_checklist = {}
-            df_itens_outros_editor = None
-            df_extras_editor = None
+            for item_rascunho in rascunho_saida.get("produtos_extras", []):
+                codigo_rascunho = str(item_rascunho.get("codigo_produto", "")).strip()
+                nome_rascunho = str(item_rascunho.get("produto", "")).strip()
+                quantidade_rascunho = item_rascunho.get("quantidade", 0)
+                observacao_rascunho = str(item_rascunho.get("observacao", "") or "")
 
-            if tipo_saida == "OUTROS":
-                st.markdown("### Itens da saída")
-                st.caption(
-                    "Adicione os produtos que serão baixados manualmente. "
-                    "Use o botão de + da tabela para criar novas linhas."
+                produto_opcao_rascunho = ""
+                if codigo_rascunho and nome_rascunho:
+                    produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
+
+                itens_outros_rascunho.append({
+                    "Produto": produto_opcao_rascunho,
+                    "Quantidade": quantidade_rascunho,
+                    "Observação": observacao_rascunho
+                })
+
+            chave_linhas_outros = f"linhas_saida_outros_{st.session_state['reset_saida']}"
+            inicializar_linhas_produto_form(
+                chave_linhas_outros,
+                linhas_iniciais=itens_outros_rascunho,
+                incluir_observacao=True
+            )
+
+            linhas_outros = renderizar_linhas_produto_form(
+                chave_linhas_outros,
+                opcoes_produtos_saida,
+                incluir_observacao=True
+            )
+
+            col_botao_esquerda, col_botao_confirmar, col_botao_direita = st.columns([2, 1, 2])
+
+            with col_botao_confirmar:
+                botao_confirmar_saida = st.button(
+                    "Confirmar saída",
+                    disabled=st.session_state["bloqueado"],
+                    use_container_width=True
                 )
 
-                itens_outros_rascunho = []
+            botao_restaurar_padrao_saida = False
 
-                for item_rascunho in rascunho_saida.get("produtos_extras", []):
-                    codigo_rascunho = str(item_rascunho.get("codigo_produto", "")).strip()
-                    nome_rascunho = str(item_rascunho.get("produto", "")).strip()
-                    quantidade_rascunho = item_rascunho.get("quantidade", 0)
-                    observacao_rascunho = str(item_rascunho.get("observacao", "") or "")
+        else:
+            st.markdown(f"### Ajustes da {tipo_saida.lower()}")
+            st.caption(
+                "Altere a quantidade final de cada item somente quando o pedido for diferente do padrão. "
+                "Exemplo: na ILHA, Blocos cupons já vem com 6 como padrão; se trocar para 5, o sistema baixa 5 blocos."
+            )
 
-                    produto_opcao_rascunho = ""
-                    if codigo_rascunho and nome_rascunho:
-                        produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
+            definicoes_checklist = obter_definicoes_checklist(tipo_saida, tipo_monzi)
+            colunas_ajustes = st.columns(3)
 
-                    itens_outros_rascunho.append({
-                        "Produto": produto_opcao_rascunho,
-                        "Quantidade": quantidade_rascunho,
-                        "Observação": observacao_rascunho
-                    })
+            for indice_def, definicao in enumerate(definicoes_checklist):
+                coluna_atual = colunas_ajustes[indice_def % 3]
 
-                if not itens_outros_rascunho:
-                    itens_outros_rascunho = [{"Produto": "", "Quantidade": 0, "Observação": ""}]
+                with coluna_atual:
+                    ajustes_rascunho = rascunho_saida.get("ajustes_checklist", {})
 
-                df_itens_outros_editor = st.data_editor(
-                    pd.DataFrame(itens_outros_rascunho),
-                    use_container_width=True,
-                    hide_index=True,
-                    num_rows="dynamic",
-                    column_config={
-                        "Produto": st.column_config.SelectboxColumn(
-                            "Produto",
-                            options=opcoes_produtos_saida,
-                            required=False
-                        ),
-                        "Quantidade": st.column_config.NumberColumn(
-                            "Quantidade",
-                            min_value=0,
-                            step=1,
-                            default=0,
-                            required=False
-                        ),
-                        "Observação": st.column_config.TextColumn(
-                            "Observação",
-                            help="Campo opcional"
-                        )
-                    },
-                    key=f"itens_outros_editor_{st.session_state['reset_saida']}"
-                )
-
-                col_botao_esquerda, col_botao_confirmar, col_botao_direita = st.columns([2, 1, 2])
-
-                with col_botao_confirmar:
-                    botao_confirmar_saida = st.form_submit_button(
-                        "Confirmar saída",
-                        disabled=st.session_state["bloqueado"],
-                        use_container_width=True
+                    ajustes_checklist[definicao["chave"]] = st.number_input(
+                        definicao["grupo"],
+                        min_value=0,
+                        step=1,
+                        value=int(ajustes_rascunho.get(definicao["chave"], definicao["padrao"])),
+                        key=f"ajuste_{tipo_saida}_{tipo_monzi}_{definicao['chave']}_{st.session_state['reset_saida']}"
                     )
 
-                botao_restaurar_padrao_saida = False
+            st.markdown("### Produtos extras da saída")
+            st.caption(
+                "Adicione quantos produtos extras forem necessários. "
+                "Se o produto já existir na saída, a quantidade será somada."
+            )
 
-            else:
-                st.markdown(f"### Ajustes da {tipo_saida.lower()}")
-                st.caption(
-                    "Altere a quantidade final de cada item somente quando o pedido for diferente do padrão. "
-                    "Exemplo: na ILHA, Blocos cupons já vem com 6 como padrão; se trocar para 5, o sistema baixa 5 blocos."
+            produtos_extras_rascunho = []
+
+            for extra in rascunho_saida.get("produtos_extras", []):
+                codigo_extra_rascunho = str(extra.get("codigo_produto", "")).strip()
+                nome_extra_rascunho = str(extra.get("produto", "")).strip()
+                quantidade_extra_rascunho = extra.get("quantidade", 0)
+
+                produto_opcao_rascunho = ""
+                if codigo_extra_rascunho and nome_extra_rascunho:
+                    produto_opcao_rascunho = f"{codigo_extra_rascunho} - {nome_extra_rascunho}"
+
+                produtos_extras_rascunho.append({
+                    "Produto": produto_opcao_rascunho,
+                    "Quantidade": quantidade_extra_rascunho
+                })
+
+            chave_linhas_extras = f"linhas_saida_extras_{st.session_state['reset_saida']}"
+            inicializar_linhas_produto_form(
+                chave_linhas_extras,
+                linhas_iniciais=produtos_extras_rascunho,
+                incluir_observacao=False
+            )
+
+            linhas_extras = renderizar_linhas_produto_form(
+                chave_linhas_extras,
+                opcoes_produtos_saida,
+                incluir_observacao=False
+            )
+
+            col_botao_esquerda, col_botao_confirmar, col_botao_restaurar, col_botao_direita = st.columns([2, 1, 1, 2])
+
+            with col_botao_confirmar:
+                botao_confirmar_saida = st.button(
+                    "Confirmar saída",
+                    disabled=st.session_state["bloqueado"],
+                    use_container_width=True
                 )
 
-                definicoes_checklist = obter_definicoes_checklist(tipo_saida, tipo_monzi)
-                colunas_ajustes = st.columns(3)
-
-                for indice_def, definicao in enumerate(definicoes_checklist):
-                    coluna_atual = colunas_ajustes[indice_def % 3]
-
-                    with coluna_atual:
-                        ajustes_rascunho = rascunho_saida.get("ajustes_checklist", {})
-
-                        ajustes_checklist[definicao["chave"]] = st.number_input(
-                            definicao["grupo"],
-                            min_value=0,
-                            step=1,
-                            value=int(ajustes_rascunho.get(definicao["chave"], definicao["padrao"])),
-                            key=f"ajuste_{tipo_saida}_{tipo_monzi}_{definicao['chave']}_{st.session_state['reset_saida']}"
-                        )
-
-                st.markdown("### Produtos extras da saída")
-                st.caption(
-                    "Adicione quantos produtos extras forem necessários. "
-                    "Use o botão de + da tabela para criar novas linhas. Se o produto já existir na saída, a quantidade será somada."
+            with col_botao_restaurar:
+                botao_restaurar_padrao_saida = st.button(
+                    "Restaurar padrão torre/ilha",
+                    disabled=st.session_state["bloqueado"],
+                    use_container_width=True
                 )
-
-                produtos_extras_rascunho = []
-
-                for extra in rascunho_saida.get("produtos_extras", []):
-                    codigo_extra_rascunho = str(extra.get("codigo_produto", "")).strip()
-                    nome_extra_rascunho = str(extra.get("produto", "")).strip()
-                    quantidade_extra_rascunho = extra.get("quantidade", 0)
-
-                    produto_opcao_rascunho = ""
-                    if codigo_extra_rascunho and nome_extra_rascunho:
-                        produto_opcao_rascunho = f"{codigo_extra_rascunho} - {nome_extra_rascunho}"
-
-                    produtos_extras_rascunho.append({
-                        "Produto": produto_opcao_rascunho,
-                        "Quantidade": quantidade_extra_rascunho
-                    })
-
-                if not produtos_extras_rascunho:
-                    produtos_extras_rascunho = [{"Produto": "", "Quantidade": 0}]
-
-                df_extras_editor = st.data_editor(
-                    pd.DataFrame(produtos_extras_rascunho),
-                    use_container_width=True,
-                    hide_index=True,
-                    num_rows="dynamic",
-                    column_config={
-                        "Produto": st.column_config.SelectboxColumn(
-                            "Produto",
-                            options=opcoes_produtos_saida,
-                            required=False
-                        ),
-                        "Quantidade": st.column_config.NumberColumn(
-                            "Quantidade",
-                            min_value=0,
-                            step=1,
-                            default=0,
-                            required=False
-                        )
-                    },
-                    key=f"produtos_extras_editor_{st.session_state['reset_saida']}"
-                )
-
-                col_botao_esquerda, col_botao_confirmar, col_botao_restaurar, col_botao_direita = st.columns([2, 1, 1, 2])
-
-                with col_botao_confirmar:
-                    botao_confirmar_saida = st.form_submit_button(
-                        "Confirmar saída",
-                        disabled=st.session_state["bloqueado"],
-                        use_container_width=True
-                    )
-
-                with col_botao_restaurar:
-                    botao_restaurar_padrao_saida = st.form_submit_button(
-                        "Restaurar padrão torre/ilha",
-                        disabled=st.session_state["bloqueado"],
-                        use_container_width=True
-                    )
 
         if tipo_saida != "OUTROS" and botao_restaurar_padrao_saida:
             ajustes_padrao = {
@@ -2837,6 +2977,7 @@ try:
                 "ajustes_checklist": ajustes_padrao,
                 "produtos_extras": []
             }
+            limpar_widgets_linhas_produto_form(f"linhas_saida_extras_{st.session_state['reset_saida']}")
             st.session_state["erro_saida_form"] = None
             st.session_state["erro_confirmar_saida"] = None
             st.session_state["reset_saida"] += 1
@@ -2846,31 +2987,30 @@ try:
             st.session_state["erro_saida_form"] = None
             st.session_state["erro_confirmar_saida"] = None
 
-            produtos_manuais = []
+            if tipo_saida == "OUTROS":
+                produtos_manuais = extrair_itens_linhas_produto(
+                    linhas_outros,
+                    mensagem_produto="Selecione o produto em todas as linhas preenchidas.",
+                    mensagem_quantidade="Informe uma quantidade maior que zero em todas as linhas preenchidas.",
+                    incluir_observacao=True
+                )
+            else:
+                produtos_extras = extrair_itens_linhas_produto(
+                    linhas_extras,
+                    mensagem_produto="Selecione o produto em todas as linhas preenchidas.",
+                    mensagem_quantidade="Informe uma quantidade maior que zero em todas as linhas preenchidas.",
+                    incluir_observacao=False
+                )
 
-            if tipo_saida == "OUTROS" and df_itens_outros_editor is not None and not df_itens_outros_editor.empty:
-                for _, linha_item in df_itens_outros_editor.iterrows():
-                    produto_item = str(linha_item.get("Produto", "") or "").strip()
-                    quantidade_item = linha_item.get("Quantidade", 0)
-                    observacao_item = str(linha_item.get("Observação", "") or "").strip()
-
-                    try:
-                        quantidade_item = float(quantidade_item or 0)
-                    except Exception:
-                        quantidade_item = 0
-
-                    if not produto_item or quantidade_item <= 0:
-                        continue
-
-                    codigo_item = produto_item.split(" - ")[0]
-                    nome_item = produto_item.split(" - ", 1)[1] if " - " in produto_item else produto_item
-
-                    produtos_manuais.append({
-                        "codigo_produto": codigo_item,
-                        "produto": nome_item,
-                        "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
-                        "observacao": observacao_item
-                    })
+                # Linhas extras totalmente vazias são ignoradas. Se não houver extras, a lista fica vazia.
+                produtos_extras = [
+                    {
+                        "codigo_produto": item["codigo_produto"],
+                        "produto": item["produto"],
+                        "quantidade": item["quantidade"]
+                    }
+                    for item in produtos_extras
+                ]
 
             if not pedido_saida.strip():
                 st.session_state["erro_saida_form"] = "Informe o número do pedido."
@@ -2909,7 +3049,7 @@ try:
                             lambda codigo: " | ".join(observacoes_por_codigo.get(str(codigo), []))
                         )
 
-                    produtos_extras = []
+                    produtos_extras_confirmacao = produtos_manuais
                 else:
                     df_saida = montar_saida(
                         tipo_saida=tipo_saida,
@@ -2931,35 +3071,13 @@ try:
                             produtos=produtos
                         )
 
-                        produtos_extras = []
-
-                        if df_extras_editor is not None and not df_extras_editor.empty:
-                            for _, linha_extra in df_extras_editor.iterrows():
-                                produto_extra = str(linha_extra.get("Produto", "") or "").strip()
-                                quantidade_extra = linha_extra.get("Quantidade", 0)
-
-                                try:
-                                    quantidade_extra = float(quantidade_extra or 0)
-                                except Exception:
-                                    quantidade_extra = 0
-
-                                if not produto_extra or quantidade_extra <= 0:
-                                    continue
-
-                                codigo_extra = produto_extra.split(" - ")[0]
-                                nome_extra = produto_extra.split(" - ", 1)[1] if " - " in produto_extra else produto_extra
-
-                                produtos_extras.append({
-                                    "codigo_produto": codigo_extra,
-                                    "produto": nome_extra,
-                                    "quantidade": int(quantidade_extra) if quantidade_extra.is_integer() else quantidade_extra
-                                })
-
                         df_saida = adicionar_produtos_extras(
                             df_saida=df_saida,
                             produtos_extras=produtos_extras,
                             produtos=produtos
                         )
+
+                    produtos_extras_confirmacao = produtos_extras
 
                 if not st.session_state.get("erro_saida_form"):
                     if df_saida.empty:
@@ -2971,7 +3089,7 @@ try:
                             "tipo_monzi": tipo_monzi,
                             "observacao": observacao_saida.strip(),
                             "ajustes_checklist": ajustes_checklist,
-                            "produtos_extras": produtos_manuais if tipo_saida == "OUTROS" else produtos_extras,
+                            "produtos_extras": produtos_extras_confirmacao,
                             "itens": df_saida.to_dict("records")
                         }
 
@@ -2991,37 +3109,13 @@ try:
                         "produtos_extras": produtos_manuais
                     }
                 else:
-                    produtos_extras_rascunho_erro = []
-
-                    if df_extras_editor is not None and not df_extras_editor.empty:
-                        for _, linha_extra in df_extras_editor.iterrows():
-                            produto_extra = str(linha_extra.get("Produto", "") or "").strip()
-                            quantidade_extra = linha_extra.get("Quantidade", 0)
-
-                            try:
-                                quantidade_extra = float(quantidade_extra or 0)
-                            except Exception:
-                                quantidade_extra = 0
-
-                            if not produto_extra or quantidade_extra <= 0:
-                                continue
-
-                            codigo_extra = produto_extra.split(" - ")[0]
-                            nome_extra = produto_extra.split(" - ", 1)[1] if " - " in produto_extra else produto_extra
-
-                            produtos_extras_rascunho_erro.append({
-                                "codigo_produto": codigo_extra,
-                                "produto": nome_extra,
-                                "quantidade": int(quantidade_extra) if quantidade_extra.is_integer() else quantidade_extra
-                            })
-
                     st.session_state["rascunho_saida"] = {
                         "pedido": pedido_saida.strip(),
                         "tipo_saida": tipo_saida,
                         "tipo_monzi": tipo_monzi,
                         "observacao": observacao_saida.strip(),
                         "ajustes_checklist": ajustes_checklist,
-                        "produtos_extras": produtos_extras_rascunho_erro
+                        "produtos_extras": produtos_extras
                     }
 
         if st.session_state.get("erro_saida_form"):
@@ -3502,10 +3596,10 @@ try:
             st.markdown("#### Cancelar saída")
             st.caption(
                 "Cancele uma saída inteira pelo pedido. "
-                "O sistema devolve todos os produtos daquela TORRE ou ILHA ao estoque e marca as movimentações como canceladas."
+                "O sistema devolve todos os produtos daquela saída ao estoque e marca as movimentações como canceladas."
             )
 
-            tipos_saida_ativos = ["SAIDA_TORRE", "SAIDA_ILHA"]
+            tipos_saida_ativos = ["SAIDA_TORRE", "SAIDA_ILHA", "SAIDA_OUTROS"]
 
             saidas = historico[
                 historico["tipo"].astype(str).str.upper().isin(tipos_saida_ativos)
