@@ -132,7 +132,6 @@ PERMISSOES_POR_PERFIL = {
         "Consulta de Estoque",
         "Entrada de Produtos",
         "Avaria",
-        "Cadastro de Produtos",
         "Edição de Produtos",
         "Consulta de Kits",
         "Histórico",
@@ -1039,96 +1038,6 @@ def adicionar_produtos_extras(df_saida, produtos_extras, produtos):
 
     return df_saida
 
-
-
-def montar_saida_outros_itens(itens_selecionados, kits, composicao_kits, produtos):
-    itens_finais = []
-
-    produtos_lookup = produtos.copy()
-    produtos_lookup["codigo"] = produtos_lookup["codigo"].astype(str)
-
-    for item in itens_selecionados:
-        tipo_item = str(item.get("tipo_item", "PRODUTO") or "PRODUTO").strip().upper()
-        codigo_item = str(item.get("codigo_item", item.get("codigo_produto", "")) or "").strip()
-        quantidade_base = float(item.get("quantidade", 0) or 0)
-        observacao_item = str(item.get("observacao", "") or "").strip()
-
-        if not codigo_item or quantidade_base <= 0:
-            continue
-
-        if tipo_item == "KIT":
-            itens_do_kit = montar_composicao_completa(
-                codigo_kit=codigo_item,
-                quantidade_base=quantidade_base,
-                kits=kits,
-                composicao_kits=composicao_kits,
-                produtos=produtos
-            )
-
-            for item_kit in itens_do_kit:
-                item_kit = dict(item_kit)
-                item_kit["observacao"] = observacao_item
-                itens_finais.append(item_kit)
-
-        else:
-            produto = produtos_lookup[produtos_lookup["codigo"] == codigo_item]
-
-            if produto.empty:
-                continue
-
-            linha_produto = produto.iloc[0]
-            estoque_atual = float(linha_produto.get("estoque_atual", 0) or 0)
-
-            itens_finais.append({
-                "codigo_produto": codigo_item,
-                "produto": linha_produto.get("nome", ""),
-                "quantidade": quantidade_base,
-                "unidade": linha_produto.get("unidade", ""),
-                "estoque_atual": estoque_atual,
-                "observacao": observacao_item
-            })
-
-    if not itens_finais:
-        return pd.DataFrame()
-
-    df_saida = pd.DataFrame(itens_finais)
-
-    observacoes_por_codigo = {}
-    if "observacao" in df_saida.columns:
-        for _, linha in df_saida.iterrows():
-            codigo_produto = str(linha.get("codigo_produto", "")).strip()
-            observacao = str(linha.get("observacao", "") or "").strip()
-
-            if not codigo_produto:
-                continue
-
-            observacoes_por_codigo.setdefault(codigo_produto, [])
-
-            if observacao and observacao not in observacoes_por_codigo[codigo_produto]:
-                observacoes_por_codigo[codigo_produto].append(observacao)
-
-    df_saida = (
-        df_saida
-        .groupby(["codigo_produto", "produto", "unidade"], as_index=False)
-        .agg({
-            "quantidade": "sum",
-            "estoque_atual": "max"
-        })
-    )
-
-    df_saida["saldo_apos_saida"] = (
-        df_saida["estoque_atual"] - df_saida["quantidade"]
-    )
-
-    df_saida["status"] = df_saida["saldo_apos_saida"].apply(
-        lambda saldo: "INSUFICIENTE" if saldo < 0 else "OK"
-    )
-
-    df_saida["observacao"] = df_saida["codigo_produto"].astype(str).map(
-        lambda codigo: " | ".join(observacoes_por_codigo.get(str(codigo), []))
-    )
-
-    return df_saida
 
 def formatar_numero_exibicao(valor):
     try:
@@ -2707,59 +2616,6 @@ try:
         )
         opcoes_produtos_saida = [""] + produtos_ativos_saida["produto_opcao"].tolist()
 
-        kits_ativos_saida = kits[kits["ativo"].astype(str).str.upper() == "SIM"].copy()
-
-        if "tipo" in kits_ativos_saida.columns:
-            kits_ativos_saida = kits_ativos_saida[
-                kits_ativos_saida["tipo"].astype(str).str.upper() != "PRINCIPAL"
-            ].copy()
-
-        def formatar_nome_kit_opcao(nome_kit):
-            nome_kit = str(nome_kit or "").strip()
-
-            if not nome_kit:
-                return ""
-
-            nome_kit = nome_kit.lower()
-            return nome_kit[:1].upper() + nome_kit[1:]
-
-        kits_ativos_saida["kit_opcao_base"] = kits_ativos_saida["nome_kit"].apply(formatar_nome_kit_opcao)
-
-        mapa_kits_saida = {}
-        nomes_kits_repetidos = set(
-            kits_ativos_saida[
-                kits_ativos_saida["kit_opcao_base"].duplicated(keep=False)
-            ]["kit_opcao_base"].tolist()
-        )
-
-        opcoes_kits_saida = []
-
-        for _, linha_kit_saida in kits_ativos_saida.iterrows():
-            codigo_kit_saida = str(linha_kit_saida["codigo_kit"]).strip()
-            nome_kit_saida_original = str(linha_kit_saida["nome_kit"]).strip()
-            nome_kit_saida_exibicao = formatar_nome_kit_opcao(nome_kit_saida_original)
-
-            if not codigo_kit_saida or not nome_kit_saida_exibicao:
-                continue
-
-            # Kits aparecem para o usuário com nome limpo e indicação de que são completos,
-            # por exemplo: "Fragrância (kit completo)".
-            opcao_kit_saida = f"{nome_kit_saida_exibicao} (kit completo)"
-
-            if nome_kit_saida_exibicao in nomes_kits_repetidos:
-                opcao_kit_saida = f"{nome_kit_saida_exibicao} (kit completo - {codigo_kit_saida})"
-
-            mapa_kits_saida[opcao_kit_saida] = {
-                "codigo_kit": codigo_kit_saida,
-                "nome_kit": nome_kit_saida_exibicao
-            }
-            opcoes_kits_saida.append(opcao_kit_saida)
-
-        # Na saída OUTROS, o usuário pode selecionar tanto kits quanto produtos individuais.
-        # Kits aparecem como "Fragrância (kit completo)".
-        # Produtos continuam aparecendo com código + nome, por exemplo: "1 - Flyer torre institucional".
-        opcoes_itens_saida = [""] + opcoes_kits_saida + produtos_ativos_saida["produto_opcao"].tolist()
-
         rascunho_saida = st.session_state.get("rascunho_saida") or {}
 
         if "tipo_saida_selecionado" not in st.session_state:
@@ -2811,26 +2667,21 @@ try:
             if tipo_saida == "OUTROS":
                 st.markdown("### Itens da saída")
                 st.caption(
-                    "Adicione os itens que serão baixados manualmente. "
-                    "Ao selecionar um kit, o sistema baixa automaticamente todos os produtos internos dele. "
-                    "Também é possível selecionar produtos individuais."
+                    "Adicione os produtos que serão baixados manualmente. "
+                    "Use o botão de + da tabela para criar novas linhas."
                 )
 
                 itens_outros_rascunho = []
 
                 for item_rascunho in rascunho_saida.get("produtos_extras", []):
-                    tipo_item_rascunho = str(item_rascunho.get("tipo_item", "PRODUTO") or "PRODUTO").strip().upper()
-                    codigo_rascunho = str(item_rascunho.get("codigo_item", item_rascunho.get("codigo_produto", ""))).strip()
+                    codigo_rascunho = str(item_rascunho.get("codigo_produto", "")).strip()
                     nome_rascunho = str(item_rascunho.get("produto", "")).strip()
                     quantidade_rascunho = item_rascunho.get("quantidade", 0)
                     observacao_rascunho = str(item_rascunho.get("observacao", "") or "")
 
                     produto_opcao_rascunho = ""
                     if codigo_rascunho and nome_rascunho:
-                        if tipo_item_rascunho == "KIT":
-                            produto_opcao_rascunho = nome_rascunho
-                        else:
-                            produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
+                        produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
 
                     itens_outros_rascunho.append({
                         "Produto": produto_opcao_rascunho,
@@ -2849,7 +2700,7 @@ try:
                     column_config={
                         "Produto": st.column_config.SelectboxColumn(
                             "Produto",
-                            options=opcoes_itens_saida,
+                            options=opcoes_produtos_saida,
                             required=False
                         ),
                         "Quantidade": st.column_config.NumberColumn(
@@ -3004,39 +2855,15 @@ try:
                     if not produto_item or quantidade_item <= 0:
                         continue
 
-                    dados_kit_saida = mapa_kits_saida.get(produto_item)
+                    codigo_item = produto_item.split(" - ")[0]
+                    nome_item = produto_item.split(" - ", 1)[1] if " - " in produto_item else produto_item
 
-                    # Compatibilidade com rascunhos antigos que ainda possam estar salvos
-                    # com o texto no formato: KIT: KIT2 - FRAGRÂNCIA.
-                    if dados_kit_saida is None and produto_item.startswith("KIT: "):
-                        produto_item_limpo = produto_item.replace("KIT: ", "", 1)
-                        codigo_item_antigo = produto_item_limpo.split(" - ")[0]
-                        nome_item_antigo = produto_item_limpo.split(" - ", 1)[1] if " - " in produto_item_limpo else produto_item_limpo
-                        dados_kit_saida = {
-                            "codigo_kit": codigo_item_antigo,
-                            "nome_kit": nome_item_antigo
-                        }
-
-                    if dados_kit_saida is not None:
-                        produtos_manuais.append({
-                            "tipo_item": "KIT",
-                            "codigo_item": dados_kit_saida["codigo_kit"],
-                            "produto": dados_kit_saida["nome_kit"],
-                            "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
-                            "observacao": observacao_item
-                        })
-                    else:
-                        codigo_produto = produto_item.split(" - ")[0].strip()
-                        nome_produto = produto_item.split(" - ", 1)[1].strip() if " - " in produto_item else produto_item
-
-                        produtos_manuais.append({
-                            "tipo_item": "PRODUTO",
-                            "codigo_item": codigo_produto,
-                            "codigo_produto": codigo_produto,
-                            "produto": nome_produto,
-                            "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
-                            "observacao": observacao_item
-                        })
+                    produtos_manuais.append({
+                        "codigo_produto": codigo_item,
+                        "produto": nome_item,
+                        "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
+                        "observacao": observacao_item
+                    })
 
             if not pedido_saida.strip():
                 st.session_state["erro_saida_form"] = "Informe o número do pedido."
@@ -3046,15 +2873,34 @@ try:
                     "Não é possível baixar novamente."
                 )
             elif tipo_saida == "OUTROS" and not produtos_manuais:
-                st.session_state["erro_saida_form"] = "Informe pelo menos um item para a saída."
+                st.session_state["erro_saida_form"] = "Informe pelo menos um produto para a saída."
             else:
                 if tipo_saida == "OUTROS":
-                    df_saida = montar_saida_outros_itens(
-                        itens_selecionados=produtos_manuais,
-                        kits=kits,
-                        composicao_kits=composicao_kits,
+                    df_saida = adicionar_produtos_extras(
+                        df_saida=pd.DataFrame(),
+                        produtos_extras=produtos_manuais,
                         produtos=produtos
                     )
+
+                    observacoes_por_codigo = {}
+                    for item_manual in produtos_manuais:
+                        codigo_observacao = str(item_manual.get("codigo_produto", "")).strip()
+                        observacao_manual = str(item_manual.get("observacao", "") or "").strip()
+
+                        if not codigo_observacao:
+                            continue
+
+                        if observacao_manual:
+                            observacoes_por_codigo.setdefault(codigo_observacao, [])
+                            if observacao_manual not in observacoes_por_codigo[codigo_observacao]:
+                                observacoes_por_codigo[codigo_observacao].append(observacao_manual)
+                        else:
+                            observacoes_por_codigo.setdefault(codigo_observacao, [])
+
+                    if not df_saida.empty:
+                        df_saida["observacao"] = df_saida["codigo_produto"].astype(str).map(
+                            lambda codigo: " | ".join(observacoes_por_codigo.get(str(codigo), []))
+                        )
 
                     produtos_extras = []
                 else:
@@ -3649,10 +3495,10 @@ try:
             st.markdown("#### Cancelar saída")
             st.caption(
                 "Cancele uma saída inteira pelo pedido. "
-                "O sistema devolve todos os produtos daquela TORRE ou ILHA ao estoque e marca as movimentações como canceladas."
+                "O sistema devolve todos os produtos daquela TORRE, ILHA ou OUTROS ao estoque e marca as movimentações como canceladas."
             )
 
-            tipos_saida_ativos = ["SAIDA_TORRE", "SAIDA_ILHA"]
+            tipos_saida_ativos = ["SAIDA_TORRE", "SAIDA_ILHA", "SAIDA_OUTROS"]
 
             saidas = historico[
                 historico["tipo"].astype(str).str.upper().isin(tipos_saida_ativos)
