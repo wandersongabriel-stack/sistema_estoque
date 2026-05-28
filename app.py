@@ -132,6 +132,7 @@ PERMISSOES_POR_PERFIL = {
         "Consulta de Estoque",
         "Entrada de Produtos",
         "Avaria",
+        "Cadastro de Produtos",
         "Edição de Produtos",
         "Consulta de Kits",
         "Histórico",
@@ -2713,14 +2714,37 @@ try:
                 kits_ativos_saida["tipo"].astype(str).str.upper() != "PRINCIPAL"
             ].copy()
 
-        kits_ativos_saida["kit_opcao"] = (
-            "KIT: "
-            + kits_ativos_saida["codigo_kit"].astype(str)
-            + " - "
-            + kits_ativos_saida["nome_kit"].astype(str)
+        kits_ativos_saida["kit_opcao"] = kits_ativos_saida["nome_kit"].astype(str)
+
+        mapa_kits_saida = {}
+        nomes_kits_repetidos = set(
+            kits_ativos_saida[
+                kits_ativos_saida["kit_opcao"].duplicated(keep=False)
+            ]["kit_opcao"].tolist()
         )
 
-        opcoes_itens_saida = [""] + kits_ativos_saida["kit_opcao"].tolist() + produtos_ativos_saida["produto_opcao"].tolist()
+        opcoes_kits_saida = []
+
+        for _, linha_kit_saida in kits_ativos_saida.iterrows():
+            codigo_kit_saida = str(linha_kit_saida["codigo_kit"]).strip()
+            nome_kit_saida = str(linha_kit_saida["nome_kit"]).strip()
+
+            if not codigo_kit_saida or not nome_kit_saida:
+                continue
+
+            # Normalmente aparece só o nome do kit para o usuário, por exemplo: Fragrância.
+            # Se um dia existirem dois kits com o mesmo nome, o código entra só para diferenciar.
+            opcao_kit_saida = nome_kit_saida
+            if nome_kit_saida in nomes_kits_repetidos:
+                opcao_kit_saida = f"{nome_kit_saida} ({codigo_kit_saida})"
+
+            mapa_kits_saida[opcao_kit_saida] = {
+                "codigo_kit": codigo_kit_saida,
+                "nome_kit": nome_kit_saida
+            }
+            opcoes_kits_saida.append(opcao_kit_saida)
+
+        opcoes_itens_saida = [""] + opcoes_kits_saida
 
         rascunho_saida = st.session_state.get("rascunho_saida") or {}
 
@@ -2773,8 +2797,8 @@ try:
             if tipo_saida == "OUTROS":
                 st.markdown("### Itens da saída")
                 st.caption(
-                    "Adicione os produtos que serão baixados manualmente. "
-                    "Use o botão de + da tabela para criar novas linhas."
+                    "Adicione os kits que serão baixados manualmente. "
+                    "Ao selecionar um kit, o sistema baixa automaticamente todos os produtos internos dele."
                 )
 
                 itens_outros_rascunho = []
@@ -2789,7 +2813,7 @@ try:
                     produto_opcao_rascunho = ""
                     if codigo_rascunho and nome_rascunho:
                         if tipo_item_rascunho == "KIT":
-                            produto_opcao_rascunho = f"KIT: {codigo_rascunho} - {nome_rascunho}"
+                            produto_opcao_rascunho = nome_rascunho
                         else:
                             produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
 
@@ -2965,30 +2989,29 @@ try:
                     if not produto_item or quantidade_item <= 0:
                         continue
 
-                    if produto_item.startswith("KIT: "):
+                    dados_kit_saida = mapa_kits_saida.get(produto_item)
+
+                    # Compatibilidade com rascunhos antigos que ainda possam estar salvos
+                    # com o texto no formato: KIT: KIT2 - FRAGRÂNCIA.
+                    if dados_kit_saida is None and produto_item.startswith("KIT: "):
                         produto_item_limpo = produto_item.replace("KIT: ", "", 1)
-                        codigo_item = produto_item_limpo.split(" - ")[0]
-                        nome_item = produto_item_limpo.split(" - ", 1)[1] if " - " in produto_item_limpo else produto_item_limpo
+                        codigo_item_antigo = produto_item_limpo.split(" - ")[0]
+                        nome_item_antigo = produto_item_limpo.split(" - ", 1)[1] if " - " in produto_item_limpo else produto_item_limpo
+                        dados_kit_saida = {
+                            "codigo_kit": codigo_item_antigo,
+                            "nome_kit": nome_item_antigo
+                        }
 
-                        produtos_manuais.append({
-                            "tipo_item": "KIT",
-                            "codigo_item": codigo_item,
-                            "produto": nome_item,
-                            "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
-                            "observacao": observacao_item
-                        })
-                    else:
-                        codigo_item = produto_item.split(" - ")[0]
-                        nome_item = produto_item.split(" - ", 1)[1] if " - " in produto_item else produto_item
+                    if dados_kit_saida is None:
+                        continue
 
-                        produtos_manuais.append({
-                            "tipo_item": "PRODUTO",
-                            "codigo_item": codigo_item,
-                            "codigo_produto": codigo_item,
-                            "produto": nome_item,
-                            "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
-                            "observacao": observacao_item
-                        })
+                    produtos_manuais.append({
+                        "tipo_item": "KIT",
+                        "codigo_item": dados_kit_saida["codigo_kit"],
+                        "produto": dados_kit_saida["nome_kit"],
+                        "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
+                        "observacao": observacao_item
+                    })
 
             if not pedido_saida.strip():
                 st.session_state["erro_saida_form"] = "Informe o número do pedido."
@@ -2998,7 +3021,7 @@ try:
                     "Não é possível baixar novamente."
                 )
             elif tipo_saida == "OUTROS" and not produtos_manuais:
-                st.session_state["erro_saida_form"] = "Informe pelo menos um produto para a saída."
+                st.session_state["erro_saida_form"] = "Informe pelo menos um kit para a saída."
             else:
                 if tipo_saida == "OUTROS":
                     df_saida = montar_saida_outros_itens(
