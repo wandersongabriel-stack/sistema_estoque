@@ -27,7 +27,7 @@ def aplicar_estilo_botoes_centralizados():
 
             div.stButton > button,
             div.stFormSubmitButton > button {
-                min-width: 160px;
+                min-width: 120px;
             }
         </style>
         """,
@@ -146,8 +146,8 @@ PERMISSOES_POR_PERFIL = {
 
 
 PERMISSOES_HISTORICO = {
-    "admin": ["excluir_entrada", "excluir_avaria", "cancelar_saida"],
-    "entrada": ["excluir_entrada", "excluir_avaria"],
+    "admin": ["excluir_entrada", "cancelar_saida"],
+    "entrada": ["excluir_entrada"],
     "saida": ["cancelar_saida"],
 }
 
@@ -259,10 +259,8 @@ def sair_do_sistema():
         "cadastro_processando",
         "edicao_processando",
         "confirmar_exclusao_entrada",
-        "confirmar_exclusao_avaria",
         "confirmar_cancelamento_saida",
         "exclusao_entrada_processando",
-        "exclusao_avaria_processando",
         "cancelamento_saida_processando",
         "cancelamento_processando",
     ]
@@ -1041,6 +1039,96 @@ def adicionar_produtos_extras(df_saida, produtos_extras, produtos):
     return df_saida
 
 
+
+def montar_saida_outros_itens(itens_selecionados, kits, composicao_kits, produtos):
+    itens_finais = []
+
+    produtos_lookup = produtos.copy()
+    produtos_lookup["codigo"] = produtos_lookup["codigo"].astype(str)
+
+    for item in itens_selecionados:
+        tipo_item = str(item.get("tipo_item", "PRODUTO") or "PRODUTO").strip().upper()
+        codigo_item = str(item.get("codigo_item", item.get("codigo_produto", "")) or "").strip()
+        quantidade_base = float(item.get("quantidade", 0) or 0)
+        observacao_item = str(item.get("observacao", "") or "").strip()
+
+        if not codigo_item or quantidade_base <= 0:
+            continue
+
+        if tipo_item == "KIT":
+            itens_do_kit = montar_composicao_completa(
+                codigo_kit=codigo_item,
+                quantidade_base=quantidade_base,
+                kits=kits,
+                composicao_kits=composicao_kits,
+                produtos=produtos
+            )
+
+            for item_kit in itens_do_kit:
+                item_kit = dict(item_kit)
+                item_kit["observacao"] = observacao_item
+                itens_finais.append(item_kit)
+
+        else:
+            produto = produtos_lookup[produtos_lookup["codigo"] == codigo_item]
+
+            if produto.empty:
+                continue
+
+            linha_produto = produto.iloc[0]
+            estoque_atual = float(linha_produto.get("estoque_atual", 0) or 0)
+
+            itens_finais.append({
+                "codigo_produto": codigo_item,
+                "produto": linha_produto.get("nome", ""),
+                "quantidade": quantidade_base,
+                "unidade": linha_produto.get("unidade", ""),
+                "estoque_atual": estoque_atual,
+                "observacao": observacao_item
+            })
+
+    if not itens_finais:
+        return pd.DataFrame()
+
+    df_saida = pd.DataFrame(itens_finais)
+
+    observacoes_por_codigo = {}
+    if "observacao" in df_saida.columns:
+        for _, linha in df_saida.iterrows():
+            codigo_produto = str(linha.get("codigo_produto", "")).strip()
+            observacao = str(linha.get("observacao", "") or "").strip()
+
+            if not codigo_produto:
+                continue
+
+            observacoes_por_codigo.setdefault(codigo_produto, [])
+
+            if observacao and observacao not in observacoes_por_codigo[codigo_produto]:
+                observacoes_por_codigo[codigo_produto].append(observacao)
+
+    df_saida = (
+        df_saida
+        .groupby(["codigo_produto", "produto", "unidade"], as_index=False)
+        .agg({
+            "quantidade": "sum",
+            "estoque_atual": "max"
+        })
+    )
+
+    df_saida["saldo_apos_saida"] = (
+        df_saida["estoque_atual"] - df_saida["quantidade"]
+    )
+
+    df_saida["status"] = df_saida["saldo_apos_saida"].apply(
+        lambda saldo: "INSUFICIENTE" if saldo < 0 else "OK"
+    )
+
+    df_saida["observacao"] = df_saida["codigo_produto"].astype(str).map(
+        lambda codigo: " | ".join(observacoes_por_codigo.get(str(codigo), []))
+    )
+
+    return df_saida
+
 def formatar_numero_exibicao(valor):
     try:
         if pd.isna(valor):
@@ -1131,16 +1219,6 @@ def registrar_saida_kit(pedido, tipo_saida, tipo_monzi, itens, observacao=""):
 def excluir_entrada_historico(id_movimentacao):
     payload = {
         "acao": "EXCLUIR_ENTRADA",
-        "id_movimentacao": id_movimentacao,
-        "cancelado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    }
-
-    return enviar_para_apps_script(payload)
-
-
-def excluir_avaria_historico(id_movimentacao):
-    payload = {
-        "acao": "EXCLUIR_AVARIA",
         "id_movimentacao": id_movimentacao,
         "cancelado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     }
@@ -1243,9 +1321,6 @@ if "confirmar_edicao" not in st.session_state:
 if "confirmar_exclusao_entrada" not in st.session_state:
     st.session_state["confirmar_exclusao_entrada"] = None
 
-if "confirmar_exclusao_avaria" not in st.session_state:
-    st.session_state["confirmar_exclusao_avaria"] = None
-
 if "confirmar_cancelamento_saida" not in st.session_state:
     st.session_state["confirmar_cancelamento_saida"] = None
 
@@ -1281,9 +1356,6 @@ if "edicao_processando" not in st.session_state:
 
 if "exclusao_entrada_processando" not in st.session_state:
     st.session_state["exclusao_entrada_processando"] = None
-
-if "exclusao_avaria_processando" not in st.session_state:
-    st.session_state["exclusao_avaria_processando"] = None
 
 if "cancelamento_saida_processando" not in st.session_state:
     st.session_state["cancelamento_saida_processando"] = None
@@ -1571,36 +1643,6 @@ if st.session_state["exclusao_entrada_processando"] is not None:
 
     finally:
         st.session_state["exclusao_entrada_processando"] = None
-        st.session_state["bloqueado"] = False
-        st.session_state["menu_principal"] = "Histórico"
-        st.rerun()
-
-    st.stop()
-
-
-# PROCESSAMENTO DE EXCLUSÃO DE AVARIA PELO HISTÓRICO
-if st.session_state["exclusao_avaria_processando"] is not None:
-    bloquear_cliques_interface()
-
-    exclusao_avaria = st.session_state["exclusao_avaria_processando"]
-
-    st.divider()
-    st.subheader("Processando exclusão de avaria")
-
-    try:
-        with st.spinner("Excluindo avaria e devolvendo item ao estoque. Aguarde..."):
-            excluir_avaria_historico(
-                id_movimentacao=exclusao_avaria["id_movimentacao"]
-            )
-
-        st.session_state["mensagem_sucesso"] = "Avaria excluída com sucesso. O item foi devolvido ao estoque."
-        st.session_state["reset_historico"] += 1
-
-    except Exception as e:
-        st.session_state["mensagem_erro"] = f"Erro ao excluir avaria: {e}"
-
-    finally:
-        st.session_state["exclusao_avaria_processando"] = None
         st.session_state["bloqueado"] = False
         st.session_state["menu_principal"] = "Histórico"
         st.rerun()
@@ -1976,64 +2018,6 @@ if st.session_state["confirmar_exclusao_entrada"] is not None:
         st.session_state["bloqueado"] = True
         st.session_state["cancelamento_processando"] = {
             "chave_confirmacao": "confirmar_exclusao_entrada",
-            "destino": "Histórico"
-        }
-        st.rerun()
-
-    st.stop()
-
-
-# CONFIRMAÇÃO DE EXCLUSÃO DE AVARIA
-if st.session_state["confirmar_exclusao_avaria"] is not None:
-    exclusao = st.session_state["confirmar_exclusao_avaria"]
-
-    st.divider()
-    st.subheader("Confirmação de exclusão de avaria")
-
-    st.warning(
-        "Revise as informações abaixo antes de confirmar a exclusão da avaria. "
-        "A linha não será apagada; ela será marcada como AVARIA_CANCELADA e o item será devolvido ao estoque."
-    )
-
-    st.write(f"**ID da movimentação:** {exclusao['id_movimentacao']}")
-    st.write(f"**Produto:** {exclusao['produto']}")
-    st.write(f"**Quantidade que será devolvida ao estoque:** {exclusao['quantidade']}")
-
-    if exclusao.get("data"):
-        st.write(f"**Data:** {exclusao['data']}")
-
-    if exclusao.get("observacao"):
-        st.write(f"**Observação:** {exclusao['observacao']}")
-    else:
-        st.write("**Observação:** Não informada")
-
-    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
-
-    with col_confirmar:
-        confirmar = st.button(
-            "Confirmar",
-            type="primary",
-            disabled=st.session_state["bloqueado"]
-        )
-
-    with col_cancelar:
-        cancelar = st.button(
-            "Cancelar",
-            disabled=st.session_state["bloqueado"]
-        )
-
-    if confirmar and not st.session_state["bloqueado"]:
-        st.session_state["bloqueado"] = True
-        st.session_state["exclusao_avaria_processando"] = {
-            "id_movimentacao": exclusao["id_movimentacao"]
-        }
-        st.session_state["confirmar_exclusao_avaria"] = None
-        st.rerun()
-
-    if cancelar and not st.session_state["bloqueado"]:
-        st.session_state["bloqueado"] = True
-        st.session_state["cancelamento_processando"] = {
-            "chave_confirmacao": "confirmar_exclusao_avaria",
             "destino": "Histórico"
         }
         st.rerun()
@@ -2722,6 +2706,22 @@ try:
         )
         opcoes_produtos_saida = [""] + produtos_ativos_saida["produto_opcao"].tolist()
 
+        kits_ativos_saida = kits[kits["ativo"].astype(str).str.upper() == "SIM"].copy()
+
+        if "tipo" in kits_ativos_saida.columns:
+            kits_ativos_saida = kits_ativos_saida[
+                kits_ativos_saida["tipo"].astype(str).str.upper() != "PRINCIPAL"
+            ].copy()
+
+        kits_ativos_saida["kit_opcao"] = (
+            "KIT: "
+            + kits_ativos_saida["codigo_kit"].astype(str)
+            + " - "
+            + kits_ativos_saida["nome_kit"].astype(str)
+        )
+
+        opcoes_itens_saida = [""] + kits_ativos_saida["kit_opcao"].tolist() + produtos_ativos_saida["produto_opcao"].tolist()
+
         rascunho_saida = st.session_state.get("rascunho_saida") or {}
 
         if "tipo_saida_selecionado" not in st.session_state:
@@ -2780,14 +2780,18 @@ try:
                 itens_outros_rascunho = []
 
                 for item_rascunho in rascunho_saida.get("produtos_extras", []):
-                    codigo_rascunho = str(item_rascunho.get("codigo_produto", "")).strip()
+                    tipo_item_rascunho = str(item_rascunho.get("tipo_item", "PRODUTO") or "PRODUTO").strip().upper()
+                    codigo_rascunho = str(item_rascunho.get("codigo_item", item_rascunho.get("codigo_produto", ""))).strip()
                     nome_rascunho = str(item_rascunho.get("produto", "")).strip()
                     quantidade_rascunho = item_rascunho.get("quantidade", 0)
                     observacao_rascunho = str(item_rascunho.get("observacao", "") or "")
 
                     produto_opcao_rascunho = ""
                     if codigo_rascunho and nome_rascunho:
-                        produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
+                        if tipo_item_rascunho == "KIT":
+                            produto_opcao_rascunho = f"KIT: {codigo_rascunho} - {nome_rascunho}"
+                        else:
+                            produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
 
                     itens_outros_rascunho.append({
                         "Produto": produto_opcao_rascunho,
@@ -2806,7 +2810,7 @@ try:
                     column_config={
                         "Produto": st.column_config.SelectboxColumn(
                             "Produto",
-                            options=opcoes_produtos_saida,
+                            options=opcoes_itens_saida,
                             required=False
                         ),
                         "Quantidade": st.column_config.NumberColumn(
@@ -2961,15 +2965,30 @@ try:
                     if not produto_item or quantidade_item <= 0:
                         continue
 
-                    codigo_item = produto_item.split(" - ")[0]
-                    nome_item = produto_item.split(" - ", 1)[1] if " - " in produto_item else produto_item
+                    if produto_item.startswith("KIT: "):
+                        produto_item_limpo = produto_item.replace("KIT: ", "", 1)
+                        codigo_item = produto_item_limpo.split(" - ")[0]
+                        nome_item = produto_item_limpo.split(" - ", 1)[1] if " - " in produto_item_limpo else produto_item_limpo
 
-                    produtos_manuais.append({
-                        "codigo_produto": codigo_item,
-                        "produto": nome_item,
-                        "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
-                        "observacao": observacao_item
-                    })
+                        produtos_manuais.append({
+                            "tipo_item": "KIT",
+                            "codigo_item": codigo_item,
+                            "produto": nome_item,
+                            "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
+                            "observacao": observacao_item
+                        })
+                    else:
+                        codigo_item = produto_item.split(" - ")[0]
+                        nome_item = produto_item.split(" - ", 1)[1] if " - " in produto_item else produto_item
+
+                        produtos_manuais.append({
+                            "tipo_item": "PRODUTO",
+                            "codigo_item": codigo_item,
+                            "codigo_produto": codigo_item,
+                            "produto": nome_item,
+                            "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
+                            "observacao": observacao_item
+                        })
 
             if not pedido_saida.strip():
                 st.session_state["erro_saida_form"] = "Informe o número do pedido."
@@ -2982,31 +3001,12 @@ try:
                 st.session_state["erro_saida_form"] = "Informe pelo menos um produto para a saída."
             else:
                 if tipo_saida == "OUTROS":
-                    df_saida = adicionar_produtos_extras(
-                        df_saida=pd.DataFrame(),
-                        produtos_extras=produtos_manuais,
+                    df_saida = montar_saida_outros_itens(
+                        itens_selecionados=produtos_manuais,
+                        kits=kits,
+                        composicao_kits=composicao_kits,
                         produtos=produtos
                     )
-
-                    observacoes_por_codigo = {}
-                    for item_manual in produtos_manuais:
-                        codigo_observacao = str(item_manual.get("codigo_produto", "")).strip()
-                        observacao_manual = str(item_manual.get("observacao", "") or "").strip()
-
-                        if not codigo_observacao:
-                            continue
-
-                        if observacao_manual:
-                            observacoes_por_codigo.setdefault(codigo_observacao, [])
-                            if observacao_manual not in observacoes_por_codigo[codigo_observacao]:
-                                observacoes_por_codigo[codigo_observacao].append(observacao_manual)
-                        else:
-                            observacoes_por_codigo.setdefault(codigo_observacao, [])
-
-                    if not df_saida.empty:
-                        df_saida["observacao"] = df_saida["codigo_produto"].astype(str).map(
-                            lambda codigo: " | ".join(observacoes_por_codigo.get(str(codigo), []))
-                        )
 
                     produtos_extras = []
                 else:
@@ -3529,10 +3529,9 @@ try:
         st.markdown("### Ações do histórico")
 
         pode_excluir_entrada = usuario_pode_acao_historico("excluir_entrada")
-        pode_excluir_avaria = usuario_pode_acao_historico("excluir_avaria")
         pode_cancelar_saida = usuario_pode_acao_historico("cancelar_saida")
 
-        if not pode_excluir_entrada and not pode_excluir_avaria and not pode_cancelar_saida:
+        if not pode_excluir_entrada and not pode_cancelar_saida:
             st.info("Seu perfil pode consultar o histórico, mas não possui ações liberadas nesta tela.")
 
         if pode_excluir_entrada:
@@ -3595,81 +3594,17 @@ try:
                     }
                     st.rerun()
 
-        if pode_excluir_entrada and (pode_excluir_avaria or pode_cancelar_saida):
-            st.divider()
-
-        if pode_excluir_avaria:
-            st.markdown("#### Excluir avaria")
-            st.caption(
-                "Exclua somente movimentações ativas de avaria. "
-                "A linha não será apagada da planilha; ela será marcada como AVARIA_CANCELADA e o item será devolvido ao estoque."
-            )
-
-            avarias = historico[
-                (historico["tipo"].astype(str).str.upper() == "SAIDA") &
-                (historico["pedido"].astype(str).str.upper() == "AVARIA")
-            ].copy()
-
-            if avarias.empty:
-                st.info("Nenhuma avaria ativa encontrada para exclusão.")
-            else:
-                avarias = avarias.sort_values("criado_em", ascending=False)
-
-                avarias["opcao_exclusao_avaria"] = avarias.apply(
-                    lambda row: (
-                        f"{row['id']} - {row['nome']} | "
-                        f"Qtd: {row['quantidade']} | "
-                        f"Data: {row.get('criado_em', '')}"
-                    ),
-                    axis=1
-                )
-
-                avaria_selecionada = st.selectbox(
-                    "Movimentação de avaria",
-                    avarias["opcao_exclusao_avaria"].tolist(),
-                    key=f"avaria_excluir_{st.session_state['reset_historico']}"
-                )
-
-                id_avaria = avaria_selecionada.split(" - ")[0]
-                linha_avaria = avarias[avarias["id"] == id_avaria].iloc[0]
-
-                st.write(f"**Produto:** {linha_avaria['nome']}")
-                st.write(f"**Quantidade que será devolvida ao estoque:** {linha_avaria['quantidade']}")
-                st.write(f"**Data:** {linha_avaria.get('criado_em', '')}")
-
-                if str(linha_avaria.get("observacao", "")).strip():
-                    st.write(f"**Observação:** {linha_avaria['observacao']}")
-
-                col_avaria_esq, col_avaria_centro, col_avaria_dir = st.columns([4, 1, 4])
-
-                with col_avaria_centro:
-                    botao_excluir_avaria = st.button(
-                        "Excluir avaria",
-                        type="primary",
-                        disabled=st.session_state["bloqueado"]
-                    )
-
-                if botao_excluir_avaria and not st.session_state["bloqueado"]:
-                    st.session_state["confirmar_exclusao_avaria"] = {
-                        "id_movimentacao": id_avaria,
-                        "produto": str(linha_avaria["nome"]),
-                        "quantidade": int(linha_avaria["quantidade"]) if float(linha_avaria["quantidade"]).is_integer() else float(linha_avaria["quantidade"]),
-                        "data": str(linha_avaria.get("criado_em", "")),
-                        "observacao": str(linha_avaria.get("observacao", "")).strip()
-                    }
-                    st.rerun()
-
-        if pode_excluir_avaria and pode_cancelar_saida:
+        if pode_excluir_entrada and pode_cancelar_saida:
             st.divider()
 
         if pode_cancelar_saida:
             st.markdown("#### Cancelar saída")
             st.caption(
                 "Cancele uma saída inteira pelo pedido. "
-                "O sistema devolve todos os produtos daquela TORRE, ILHA ou OUTROS ao estoque e marca as movimentações como canceladas."
+                "O sistema devolve todos os produtos daquela TORRE ou ILHA ao estoque e marca as movimentações como canceladas."
             )
 
-            tipos_saida_ativos = ["SAIDA_TORRE", "SAIDA_ILHA", "SAIDA_OUTROS"]
+            tipos_saida_ativos = ["SAIDA_TORRE", "SAIDA_ILHA"]
 
             saidas = historico[
                 historico["tipo"].astype(str).str.upper().isin(tipos_saida_ativos)
