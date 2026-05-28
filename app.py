@@ -2744,7 +2744,10 @@ try:
             }
             opcoes_kits_saida.append(opcao_kit_saida)
 
-        opcoes_itens_saida = [""] + opcoes_kits_saida
+        # Na saída OUTROS, o usuário pode selecionar tanto kits quanto produtos individuais.
+        # Kits aparecem apenas pelo nome limpo, por exemplo: "Fragrância".
+        # Produtos continuam aparecendo com código + nome, por exemplo: "1 - Flyer torre institucional".
+        opcoes_itens_saida = [""] + opcoes_kits_saida + produtos_ativos_saida["produto_opcao"].tolist()
 
         rascunho_saida = st.session_state.get("rascunho_saida") or {}
 
@@ -2797,8 +2800,9 @@ try:
             if tipo_saida == "OUTROS":
                 st.markdown("### Itens da saída")
                 st.caption(
-                    "Adicione os kits que serão baixados manualmente. "
-                    "Ao selecionar um kit, o sistema baixa automaticamente todos os produtos internos dele."
+                    "Adicione os itens que serão baixados manualmente. "
+                    "Ao selecionar um kit, o sistema baixa automaticamente todos os produtos internos dele. "
+                    "Também é possível selecionar produtos individuais."
                 )
 
                 itens_outros_rascunho = []
@@ -3002,16 +3006,26 @@ try:
                             "nome_kit": nome_item_antigo
                         }
 
-                    if dados_kit_saida is None:
-                        continue
+                    if dados_kit_saida is not None:
+                        produtos_manuais.append({
+                            "tipo_item": "KIT",
+                            "codigo_item": dados_kit_saida["codigo_kit"],
+                            "produto": dados_kit_saida["nome_kit"],
+                            "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
+                            "observacao": observacao_item
+                        })
+                    else:
+                        codigo_produto = produto_item.split(" - ")[0].strip()
+                        nome_produto = produto_item.split(" - ", 1)[1].strip() if " - " in produto_item else produto_item
 
-                    produtos_manuais.append({
-                        "tipo_item": "KIT",
-                        "codigo_item": dados_kit_saida["codigo_kit"],
-                        "produto": dados_kit_saida["nome_kit"],
-                        "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
-                        "observacao": observacao_item
-                    })
+                        produtos_manuais.append({
+                            "tipo_item": "PRODUTO",
+                            "codigo_item": codigo_produto,
+                            "codigo_produto": codigo_produto,
+                            "produto": nome_produto,
+                            "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
+                            "observacao": observacao_item
+                        })
 
             if not pedido_saida.strip():
                 st.session_state["erro_saida_form"] = "Informe o número do pedido."
@@ -3021,7 +3035,7 @@ try:
                     "Não é possível baixar novamente."
                 )
             elif tipo_saida == "OUTROS" and not produtos_manuais:
-                st.session_state["erro_saida_form"] = "Informe pelo menos um kit para a saída."
+                st.session_state["erro_saida_form"] = "Informe pelo menos um item para a saída."
             else:
                 if tipo_saida == "OUTROS":
                     df_saida = montar_saida_outros_itens(
