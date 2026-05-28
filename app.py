@@ -2714,38 +2714,49 @@ try:
                 kits_ativos_saida["tipo"].astype(str).str.upper() != "PRINCIPAL"
             ].copy()
 
-        kits_ativos_saida["kit_opcao"] = kits_ativos_saida["nome_kit"].astype(str)
+        def formatar_nome_kit_opcao(nome_kit):
+            nome_kit = str(nome_kit or "").strip()
+
+            if not nome_kit:
+                return ""
+
+            nome_kit = nome_kit.lower()
+            return nome_kit[:1].upper() + nome_kit[1:]
+
+        kits_ativos_saida["kit_opcao_base"] = kits_ativos_saida["nome_kit"].apply(formatar_nome_kit_opcao)
 
         mapa_kits_saida = {}
         nomes_kits_repetidos = set(
             kits_ativos_saida[
-                kits_ativos_saida["kit_opcao"].duplicated(keep=False)
-            ]["kit_opcao"].tolist()
+                kits_ativos_saida["kit_opcao_base"].duplicated(keep=False)
+            ]["kit_opcao_base"].tolist()
         )
 
         opcoes_kits_saida = []
 
         for _, linha_kit_saida in kits_ativos_saida.iterrows():
             codigo_kit_saida = str(linha_kit_saida["codigo_kit"]).strip()
-            nome_kit_saida = str(linha_kit_saida["nome_kit"]).strip()
+            nome_kit_saida_original = str(linha_kit_saida["nome_kit"]).strip()
+            nome_kit_saida_exibicao = formatar_nome_kit_opcao(nome_kit_saida_original)
 
-            if not codigo_kit_saida or not nome_kit_saida:
+            if not codigo_kit_saida or not nome_kit_saida_exibicao:
                 continue
 
-            # Normalmente aparece só o nome do kit para o usuário, por exemplo: Fragrância.
-            # Se um dia existirem dois kits com o mesmo nome, o código entra só para diferenciar.
-            opcao_kit_saida = nome_kit_saida
-            if nome_kit_saida in nomes_kits_repetidos:
-                opcao_kit_saida = f"{nome_kit_saida} ({codigo_kit_saida})"
+            # Kits aparecem para o usuário com nome limpo e indicação de que são completos,
+            # por exemplo: "Fragrância (kit completo)".
+            opcao_kit_saida = f"{nome_kit_saida_exibicao} (kit completo)"
+
+            if nome_kit_saida_exibicao in nomes_kits_repetidos:
+                opcao_kit_saida = f"{nome_kit_saida_exibicao} (kit completo - {codigo_kit_saida})"
 
             mapa_kits_saida[opcao_kit_saida] = {
                 "codigo_kit": codigo_kit_saida,
-                "nome_kit": nome_kit_saida
+                "nome_kit": nome_kit_saida_exibicao
             }
             opcoes_kits_saida.append(opcao_kit_saida)
 
         # Na saída OUTROS, o usuário pode selecionar tanto kits quanto produtos individuais.
-        # Kits aparecem apenas pelo nome limpo, por exemplo: "Fragrância".
+        # Kits aparecem como "Fragrância (kit completo)".
         # Produtos continuam aparecendo com código + nome, por exemplo: "1 - Flyer torre institucional".
         opcoes_itens_saida = [""] + opcoes_kits_saida + produtos_ativos_saida["produto_opcao"].tolist()
 
