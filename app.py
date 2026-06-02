@@ -2617,6 +2617,44 @@ try:
         )
         opcoes_produtos_saida = [""] + produtos_ativos_saida["produto_opcao"].tolist()
 
+        def formatar_nome_kit_saida(nome_kit):
+            nome_kit = str(nome_kit or "").strip()
+            if not nome_kit:
+                return "Kit sem nome"
+            return nome_kit.lower().capitalize()
+
+        kits_ativos_saida = kits[kits["ativo"].astype(str).str.upper() == "SIM"].copy()
+        opcoes_kits_saida = []
+        mapa_opcoes_saida_outros = {}
+
+        for _, kit_linha in kits_ativos_saida.iterrows():
+            codigo_kit_opcao = str(kit_linha.get("codigo_kit", "")).strip()
+            nome_kit_opcao = formatar_nome_kit_saida(kit_linha.get("nome_kit", ""))
+
+            if not codigo_kit_opcao:
+                continue
+
+            opcao_kit = f"{nome_kit_opcao} (kit completo)"
+            opcoes_kits_saida.append(opcao_kit)
+            mapa_opcoes_saida_outros[opcao_kit] = {
+                "tipo": "KIT",
+                "codigo": codigo_kit_opcao,
+                "nome": nome_kit_opcao
+            }
+
+        for _, produto_linha in produtos_ativos_saida.iterrows():
+            codigo_produto_opcao = str(produto_linha.get("codigo", "")).strip()
+            nome_produto_opcao = str(produto_linha.get("nome", "")).strip()
+            opcao_produto = f"{codigo_produto_opcao} - {nome_produto_opcao}"
+
+            mapa_opcoes_saida_outros[opcao_produto] = {
+                "tipo": "PRODUTO",
+                "codigo": codigo_produto_opcao,
+                "nome": nome_produto_opcao
+            }
+
+        opcoes_itens_saida_outros = [""] + opcoes_kits_saida + produtos_ativos_saida["produto_opcao"].tolist()
+
         rascunho_saida = st.session_state.get("rascunho_saida") or {}
 
         if "tipo_saida_selecionado" not in st.session_state:
@@ -2679,10 +2717,15 @@ try:
                     nome_rascunho = str(item_rascunho.get("produto", "")).strip()
                     quantidade_rascunho = item_rascunho.get("quantidade", 0)
                     observacao_rascunho = str(item_rascunho.get("observacao", "") or "")
+                    tipo_item_rascunho = str(item_rascunho.get("tipo_item", "PRODUTO") or "PRODUTO").strip().upper()
 
-                    produto_opcao_rascunho = ""
-                    if codigo_rascunho and nome_rascunho:
-                        produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
+                    produto_opcao_rascunho = str(item_rascunho.get("opcao_saida", "") or "").strip()
+
+                    if not produto_opcao_rascunho:
+                        if tipo_item_rascunho == "KIT" and nome_rascunho:
+                            produto_opcao_rascunho = f"{formatar_nome_kit_saida(nome_rascunho)} (kit completo)"
+                        elif codigo_rascunho and nome_rascunho:
+                            produto_opcao_rascunho = f"{codigo_rascunho} - {nome_rascunho}"
 
                     itens_outros_rascunho.append({
                         "Produto": produto_opcao_rascunho,
@@ -2701,7 +2744,7 @@ try:
                     column_config={
                         "Produto": st.column_config.SelectboxColumn(
                             "Produto",
-                            options=opcoes_produtos_saida,
+                            options=opcoes_itens_saida_outros,
                             required=False
                         ),
                         "Quantidade": st.column_config.NumberColumn(
@@ -2841,6 +2884,7 @@ try:
             st.session_state["erro_confirmar_saida"] = None
 
             produtos_manuais = []
+            itens_outros_expandido = []
 
             if tipo_saida == "OUTROS" and df_itens_outros_editor is not None and not df_itens_outros_editor.empty:
                 for _, linha_item in df_itens_outros_editor.iterrows():
@@ -2856,15 +2900,67 @@ try:
                     if not produto_item or quantidade_item <= 0:
                         continue
 
-                    codigo_item = produto_item.split(" - ")[0]
-                    nome_item = produto_item.split(" - ", 1)[1] if " - " in produto_item else produto_item
+                    dados_opcao = mapa_opcoes_saida_outros.get(produto_item)
 
-                    produtos_manuais.append({
-                        "codigo_produto": codigo_item,
-                        "produto": nome_item,
-                        "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
-                        "observacao": observacao_item
-                    })
+                    if dados_opcao and dados_opcao["tipo"] == "KIT":
+                        codigo_kit_item = dados_opcao["codigo"]
+                        nome_kit_item = dados_opcao["nome"]
+
+                        produtos_manuais.append({
+                            "tipo_item": "KIT",
+                            "codigo_produto": codigo_kit_item,
+                            "produto": nome_kit_item,
+                            "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
+                            "observacao": observacao_item,
+                            "opcao_saida": produto_item
+                        })
+
+                        itens_do_kit = montar_composicao_completa(
+                            codigo_kit=codigo_kit_item,
+                            quantidade_base=quantidade_item,
+                            kits=kits,
+                            composicao_kits=composicao_kits,
+                            produtos=produtos
+                        )
+
+                        for item_kit in itens_do_kit:
+                            item_kit_saida = dict(item_kit)
+                            item_kit_saida["observacao"] = observacao_item
+                            itens_outros_expandido.append(item_kit_saida)
+
+                    else:
+                        if dados_opcao and dados_opcao["tipo"] == "PRODUTO":
+                            codigo_item = dados_opcao["codigo"]
+                            nome_item = dados_opcao["nome"]
+                        else:
+                            codigo_item = produto_item.split(" - ")[0]
+                            nome_item = produto_item.split(" - ", 1)[1] if " - " in produto_item else produto_item
+
+                        produtos_manuais.append({
+                            "tipo_item": "PRODUTO",
+                            "codigo_produto": codigo_item,
+                            "produto": nome_item,
+                            "quantidade": int(quantidade_item) if quantidade_item.is_integer() else quantidade_item,
+                            "observacao": observacao_item,
+                            "opcao_saida": produto_item
+                        })
+
+                        produto_linha = produtos_ativos_saida[produtos_ativos_saida["codigo"].astype(str) == str(codigo_item)]
+
+                        if not produto_linha.empty:
+                            linha_produto = produto_linha.iloc[0]
+                            estoque_atual = float(linha_produto.get("estoque_atual", 0) or 0)
+
+                            itens_outros_expandido.append({
+                                "codigo_produto": str(codigo_item),
+                                "produto": nome_item,
+                                "quantidade": quantidade_item,
+                                "unidade": linha_produto.get("unidade", ""),
+                                "estoque_atual": estoque_atual,
+                                "saldo_apos_saida": estoque_atual - quantidade_item,
+                                "status": "INSUFICIENTE" if (estoque_atual - quantidade_item) < 0 else "OK",
+                                "observacao": observacao_item
+                            })
 
             if not pedido_saida.strip():
                 st.session_state["erro_saida_form"] = "Informe o número do pedido."
@@ -2877,28 +2973,43 @@ try:
                 st.session_state["erro_saida_form"] = "Informe pelo menos um produto para a saída."
             else:
                 if tipo_saida == "OUTROS":
-                    df_saida = adicionar_produtos_extras(
-                        df_saida=pd.DataFrame(),
-                        produtos_extras=produtos_manuais,
-                        produtos=produtos
-                    )
-
-                    observacoes_por_codigo = {}
-                    for item_manual in produtos_manuais:
-                        codigo_observacao = str(item_manual.get("codigo_produto", "")).strip()
-                        observacao_manual = str(item_manual.get("observacao", "") or "").strip()
-
-                        if not codigo_observacao:
-                            continue
-
-                        if observacao_manual:
-                            observacoes_por_codigo.setdefault(codigo_observacao, [])
-                            if observacao_manual not in observacoes_por_codigo[codigo_observacao]:
-                                observacoes_por_codigo[codigo_observacao].append(observacao_manual)
-                        else:
-                            observacoes_por_codigo.setdefault(codigo_observacao, [])
+                    if itens_outros_expandido:
+                        df_saida = pd.DataFrame(itens_outros_expandido)
+                    else:
+                        df_saida = pd.DataFrame()
 
                     if not df_saida.empty:
+                        observacoes_por_codigo = {}
+
+                        for _, linha_expandida in df_saida.iterrows():
+                            codigo_observacao = str(linha_expandida.get("codigo_produto", "")).strip()
+                            observacao_manual = str(linha_expandida.get("observacao", "") or "").strip()
+
+                            if not codigo_observacao:
+                                continue
+
+                            observacoes_por_codigo.setdefault(codigo_observacao, [])
+
+                            if observacao_manual and observacao_manual not in observacoes_por_codigo[codigo_observacao]:
+                                observacoes_por_codigo[codigo_observacao].append(observacao_manual)
+
+                        df_saida = (
+                            df_saida
+                            .groupby(["codigo_produto", "produto", "unidade"], as_index=False)
+                            .agg({
+                                "quantidade": "sum",
+                                "estoque_atual": "max"
+                            })
+                        )
+
+                        df_saida["saldo_apos_saida"] = (
+                            df_saida["estoque_atual"] - df_saida["quantidade"]
+                        )
+
+                        df_saida["status"] = df_saida["saldo_apos_saida"].apply(
+                            lambda saldo: "INSUFICIENTE" if saldo < 0 else "OK"
+                        )
+
                         df_saida["observacao"] = df_saida["codigo_produto"].astype(str).map(
                             lambda codigo: " | ".join(observacoes_por_codigo.get(str(codigo), []))
                         )
