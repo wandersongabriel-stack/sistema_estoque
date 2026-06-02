@@ -3614,10 +3614,10 @@ try:
             st.markdown("#### Cancelar saída")
             st.caption(
                 "Cancele uma saída inteira pelo pedido. "
-                "O sistema devolve todos os produtos daquela TORRE ou ILHA ao estoque e marca as movimentações como canceladas."
+                "O sistema devolve todos os produtos daquela TORRE, ILHA ou OUTROS ao estoque e marca as movimentações como canceladas."
             )
 
-            tipos_saida_ativos = ["SAIDA_TORRE", "SAIDA_ILHA"]
+            tipos_saida_ativos = ["SAIDA_TORRE", "SAIDA_ILHA", "SAIDA_OUTROS"]
 
             saidas = historico[
                 historico["tipo"].astype(str).str.upper().isin(tipos_saida_ativos)
