@@ -2629,9 +2629,16 @@ try:
 
         for _, kit_linha in kits_ativos_saida.iterrows():
             codigo_kit_opcao = str(kit_linha.get("codigo_kit", "")).strip()
-            nome_kit_opcao = formatar_nome_kit_saida(kit_linha.get("nome_kit", ""))
+            nome_kit_original = str(kit_linha.get("nome_kit", "") or "").strip()
+            nome_kit_opcao = formatar_nome_kit_saida(nome_kit_original)
 
             if not codigo_kit_opcao:
+                continue
+
+            # Na opção OUTROS, não mostrar os kits principais de montagem.
+            # TORRE e ILHA continuam existindo somente no campo "Tipo de saída".
+            nome_kit_normalizado = nome_kit_original.strip().lower()
+            if codigo_kit_opcao.upper() in ["KIT1", "KIT7"] or nome_kit_normalizado in ["torre", "ilha"]:
                 continue
 
             opcao_kit = f"{nome_kit_opcao} (kit completo)"
