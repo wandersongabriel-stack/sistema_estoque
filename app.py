@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 import html
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 st.set_page_config(
     page_title="Sistema de Estoque",
@@ -39,6 +40,10 @@ aplicar_estilo_botoes_centralizados()
 
 
 TEMPO_ALERTA_MS = 6000
+
+
+def agora_brasil():
+    return datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M:%S")
 
 
 def exibir_alerta_temporario(mensagem, tipo="info", duracao_ms=TEMPO_ALERTA_MS):
@@ -1087,7 +1092,7 @@ def registrar_movimentacao(codigo_produto, tipo, quantidade, pedido="", observac
         "pedido": pedido,
         "quantidade": quantidade,
         "observacao": observacao,
-        "criado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        "criado_em": agora_brasil()
     }
 
     return enviar_para_apps_script(payload)
@@ -1121,7 +1126,7 @@ def registrar_saida_kit(pedido, tipo_saida, tipo_monzi, itens, observacao=""):
         "tipo_monzi": tipo_monzi,
         "observacao": str(observacao or "").strip(),
         "itens": itens_payload,
-        "criado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        "criado_em": agora_brasil()
     }
 
     return enviar_para_apps_script(payload)
@@ -1131,7 +1136,7 @@ def excluir_entrada_historico(id_movimentacao):
     payload = {
         "acao": "EXCLUIR_ENTRADA",
         "id_movimentacao": id_movimentacao,
-        "cancelado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        "cancelado_em": agora_brasil()
     }
 
     return enviar_para_apps_script(payload)
@@ -1141,7 +1146,7 @@ def cancelar_saida_historico(pedido):
     payload = {
         "acao": "CANCELAR_SAIDA",
         "pedido": pedido,
-        "cancelado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        "cancelado_em": agora_brasil()
     }
 
     return enviar_para_apps_script(payload)
@@ -1153,7 +1158,7 @@ def cadastrar_produto(nome, unidade, estoque_minimo):
         "nome": nome,
         "unidade": unidade,
         "estoque_minimo": estoque_minimo,
-        "criado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        "criado_em": agora_brasil()
     }
 
     return enviar_para_apps_script(payload)
@@ -1167,7 +1172,7 @@ def editar_produto(codigo, nome, unidade, estoque_minimo, ativo):
         "unidade": unidade,
         "estoque_minimo": estoque_minimo,
         "ativo": ativo,
-        "atualizado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        "atualizado_em": agora_brasil()
     }
 
     return enviar_para_apps_script(payload)
