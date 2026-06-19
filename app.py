@@ -697,7 +697,7 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
                 "chave": "tubo_envios_60cm",
                 "grupo": "Tubo de envios 60cm",
                 "codigos": ["30"],
-                "padrao": 4,
+                "padrao": 1,
                 "quantidades_por_unidade": {"30": 1}
             },
         ]
@@ -867,7 +867,7 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
             "chave": "tubo_envios_60cm",
             "grupo": "Tubo de envios 60cm",
             "codigos": ["30"],
-            "padrao": 2,
+            "padrao": 1,
             "quantidades_por_unidade": {"30": 1}
         },
     ]
