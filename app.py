@@ -693,6 +693,13 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
                 "padrao": 2,
                 "quantidades_por_unidade": {"26": 1}
             },
+            {
+                "chave": "tubo_envios_60cm",
+                "grupo": "Tubo de envios 60cm",
+                "codigos": ["30"],
+                "padrao": 4,
+                "quantidades_por_unidade": {"30": 1}
+            },
         ]
 
         if tipo_monzi == "Prata":
@@ -855,6 +862,13 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
             "codigos": ["26"],
             "padrao": 1,
             "quantidades_por_unidade": {"26": 1}
+        },
+        {
+            "chave": "tubo_envios_60cm",
+            "grupo": "Tubo de envios 60cm",
+            "codigos": ["30"],
+            "padrao": 2,
+            "quantidades_por_unidade": {"30": 1}
         },
     ]
 
