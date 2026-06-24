@@ -328,10 +328,27 @@ def carregar_dados():
     return produtos, movimentacoes, kits, composicao_kits
 
 
+def normalizar_codigo(valor):
+    if pd.isna(valor):
+        return ""
+
+    codigo = str(valor).strip()
+
+    try:
+        numero = float(codigo)
+
+        if numero.is_integer():
+            return str(int(numero))
+    except (ValueError, TypeError):
+        pass
+
+    return codigo
+
+
 def tratar_produtos(produtos):
     produtos = produtos.copy()
 
-    produtos["codigo"] = produtos["codigo"].astype(str)
+    produtos["codigo"] = produtos["codigo"].apply(normalizar_codigo)
 
     produtos["estoque_atual"] = pd.to_numeric(
         produtos["estoque_atual"],
@@ -2182,6 +2199,9 @@ try:
     produtos = tratar_produtos(produtos)
     produtos = recalcular_status_produtos(produtos)
 
+    if "codigo_produto" in movimentacoes.columns:
+        movimentacoes["codigo_produto"] = movimentacoes["codigo_produto"].apply(normalizar_codigo)
+
     kits["codigo_kit"] = kits["codigo_kit"].astype(str)
     kits["nome_kit"] = kits["nome_kit"].astype(str)
     kits["ativo"] = kits["ativo"].astype(str)
@@ -3508,7 +3528,7 @@ try:
             st.stop()
 
         historico_base["id"] = historico_base["id"].astype(str)
-        historico_base["codigo_produto"] = historico_base["codigo_produto"].astype(str)
+        historico_base["codigo_produto"] = historico_base["codigo_produto"].apply(normalizar_codigo)
         historico_base["tipo"] = historico_base["tipo"].astype(str)
         historico_base["pedido"] = historico_base["pedido"].fillna("").astype(str)
         historico_base["observacao"] = historico_base["observacao"].fillna("").astype(str)
@@ -3518,7 +3538,7 @@ try:
         ).fillna(0)
 
         produtos_lookup = produtos[["codigo", "nome"]].copy()
-        produtos_lookup["codigo"] = produtos_lookup["codigo"].astype(str)
+        produtos_lookup["codigo"] = produtos_lookup["codigo"].apply(normalizar_codigo)
 
         historico = historico_base.merge(
             produtos_lookup,
