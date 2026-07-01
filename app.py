@@ -46,6 +46,10 @@ def agora_brasil():
     return datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M:%S")
 
 
+def gerar_referencia_saida_outros():
+    return datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("OUTROS-%Y%m%d-%H%M%S-%f")
+
+
 def exibir_alerta_temporario(mensagem, tipo="info", duracao_ms=TEMPO_ALERTA_MS):
     mensagem = str(mensagem or "").strip()
 
@@ -2737,8 +2741,8 @@ try:
 
         with st.form(f"form_saida_produtos_{tipo_saida}_{tipo_monzi}_{st.session_state['reset_saida']}"):
             pedido_saida = st.text_input(
-                "Número do pedido",
-                placeholder="Ex: PED123",
+                "Número do pedido" if tipo_saida != "OUTROS" else "Número do pedido (opcional)",
+                placeholder="Ex: PED123" if tipo_saida != "OUTROS" else "Pode deixar em branco",
                 value=rascunho_saida.get("pedido", ""),
                 key=f"pedido_saida_{st.session_state['reset_saida']}"
             )
@@ -3008,9 +3012,16 @@ try:
                                 "observacao": observacao_item
                             })
 
-            if not pedido_saida.strip():
+            pedido_informado = pedido_saida.strip()
+
+            if tipo_saida == "OUTROS" and not pedido_informado:
+                pedido_processado = gerar_referencia_saida_outros()
+            else:
+                pedido_processado = pedido_informado
+
+            if tipo_saida != "OUTROS" and not pedido_processado:
                 st.session_state["erro_saida_form"] = "Informe o número do pedido."
-            elif pedido_saida_ja_existe(movimentacoes, pedido_saida.strip()):
+            elif pedido_processado and pedido_saida_ja_existe(movimentacoes, pedido_processado):
                 st.session_state["erro_saida_form"] = (
                     "Erro ao registrar saída: Este pedido já possui saída registrada. "
                     "Não é possível baixar novamente."
@@ -3117,7 +3128,7 @@ try:
                         st.session_state["erro_saida_form"] = "Nenhum item será baixado com os ajustes informados."
                     else:
                         saida_confirmacao = {
-                            "pedido": pedido_saida.strip(),
+                            "pedido": pedido_processado,
                             "tipo_saida": tipo_saida,
                             "tipo_monzi": tipo_monzi,
                             "observacao": observacao_saida.strip(),
