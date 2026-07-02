@@ -2742,7 +2742,7 @@ try:
         with st.form(f"form_saida_produtos_{tipo_saida}_{tipo_monzi}_{st.session_state['reset_saida']}"):
             pedido_saida = st.text_input(
                 "Número do pedido" if tipo_saida != "OUTROS" else "Número do pedido (opcional)",
-                placeholder="Ex: PED123" if tipo_saida != "OUTROS" else "Pode deixar em branco",
+                placeholder="Ex: PED123" if tipo_saida != "OUTROS" else "Número do pedido",
                 value=rascunho_saida.get("pedido", ""),
                 key=f"pedido_saida_{st.session_state['reset_saida']}"
             )
