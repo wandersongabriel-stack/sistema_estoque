@@ -2581,7 +2581,7 @@ try:
         try:
             pdf_consulta = gerar_pdf_consulta_estoque(consulta_exibir, filtros)
             st.download_button(
-                "Baixar PDF da consulta",
+                "Baixar PDF do estoque",
                 data=pdf_consulta,
                 file_name=f"consulta_estoque_{datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%Y%m%d_%H%M%S')}.pdf",
                 mime="application/pdf",
