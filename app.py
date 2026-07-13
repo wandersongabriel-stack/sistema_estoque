@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import pandas as pd
 import requests
 import html
+from io import BytesIO
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -1103,6 +1104,176 @@ def formatar_colunas_numericas_exibicao(df, colunas):
             df[coluna] = df[coluna].apply(formatar_numero_exibicao)
 
     return df
+
+
+def gerar_pdf_consulta_estoque(df_consulta, filtros):
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=1 * cm,
+        leftMargin=1 * cm,
+        topMargin=1 * cm,
+        bottomMargin=1 * cm,
+    )
+
+    estilos = getSampleStyleSheet()
+    estilo_titulo = ParagraphStyle(
+        "TituloRelatorio",
+        parent=estilos["Title"],
+        alignment=TA_CENTER,
+        fontSize=16,
+        leading=20,
+        spaceAfter=10,
+    )
+    estilo_info = ParagraphStyle(
+        "InfoRelatorio",
+        parent=estilos["Normal"],
+        fontSize=8,
+        leading=10,
+        spaceAfter=6,
+    )
+    estilo_cabecalho = ParagraphStyle(
+        "CabecalhoTabela",
+        parent=estilos["Normal"],
+        alignment=TA_CENTER,
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+        fontName="Helvetica-Bold",
+    )
+    estilo_celula = ParagraphStyle(
+        "CelulaTabela",
+        parent=estilos["Normal"],
+        alignment=TA_LEFT,
+        fontSize=7,
+        leading=9,
+    )
+
+    df_pdf = df_consulta.copy()
+
+    colunas_pdf = {
+        "codigo": "Código",
+        "nome": "Produto",
+        "unidade": "Unidade",
+        "estoque_atual": "Estoque Atual",
+        "estoque_minimo": "Estoque Mínimo",
+        "status": "Status",
+        "ativo": "Ativo",
+        "atualizado_em": "Atualizado em",
+    }
+
+    df_pdf = df_pdf.rename(columns=colunas_pdf)
+
+    colunas_ordenadas = [
+        "Código",
+        "Produto",
+        "Unidade",
+        "Estoque Atual",
+        "Estoque Mínimo",
+        "Status",
+        "Ativo",
+        "Atualizado em",
+    ]
+
+    colunas_ordenadas = [coluna for coluna in colunas_ordenadas if coluna in df_pdf.columns]
+    df_pdf = df_pdf[colunas_ordenadas].copy()
+
+    for coluna in ["Estoque Atual", "Estoque Mínimo"]:
+        if coluna in df_pdf.columns:
+            df_pdf[coluna] = df_pdf[coluna].apply(formatar_numero_exibicao)
+
+    elementos = []
+    elementos.append(Paragraph("Consulta de Estoque", estilo_titulo))
+    elementos.append(Paragraph(f"Gerado em: {agora_brasil()}", estilo_info))
+
+    filtros_texto = []
+    if filtros:
+        busca_nome = str(filtros.get("busca_nome", "") or "").strip()
+        filtro_ativo = str(filtros.get("ativo", "Todos") or "Todos")
+        filtro_status = str(filtros.get("status", "Todos") or "Todos")
+        filtro_unidade = str(filtros.get("unidade", "Todas") or "Todas")
+
+        if busca_nome:
+            filtros_texto.append(f"Busca: {busca_nome}")
+        filtros_texto.append(f"Ativo: {filtro_ativo}")
+        filtros_texto.append(f"Status: {filtro_status}")
+        filtros_texto.append(f"Unidade: {filtro_unidade}")
+
+    elementos.append(Paragraph("Filtros aplicados: " + " | ".join(filtros_texto), estilo_info))
+    elementos.append(Paragraph(f"Produtos encontrados: {len(df_pdf)}", estilo_info))
+    elementos.append(Spacer(1, 0.2 * cm))
+
+    dados_tabela = []
+    dados_tabela.append([Paragraph(str(coluna), estilo_cabecalho) for coluna in colunas_ordenadas])
+
+    for _, linha in df_pdf.iterrows():
+        dados_tabela.append([
+            Paragraph(html.escape(str(linha.get(coluna, ""))), estilo_celula)
+            for coluna in colunas_ordenadas
+        ])
+
+    larguras_colunas = []
+    for coluna in colunas_ordenadas:
+        if coluna == "Código":
+            larguras_colunas.append(1.6 * cm)
+        elif coluna == "Produto":
+            larguras_colunas.append(6.5 * cm)
+        elif coluna == "Unidade":
+            larguras_colunas.append(2.2 * cm)
+        elif coluna in ["Estoque Atual", "Estoque Mínimo"]:
+            larguras_colunas.append(2.4 * cm)
+        elif coluna == "Status":
+            larguras_colunas.append(2.7 * cm)
+        elif coluna == "Ativo":
+            larguras_colunas.append(1.6 * cm)
+        elif coluna == "Atualizado em":
+            larguras_colunas.append(3.7 * cm)
+        else:
+            larguras_colunas.append(2.5 * cm)
+
+    tabela = Table(dados_tabela, colWidths=larguras_colunas, repeatRows=1)
+
+    estilos_tabela = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d1d5db")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+    ]
+
+    if "Status" in colunas_ordenadas:
+        indice_status = colunas_ordenadas.index("Status")
+
+        for indice_linha, (_, linha) in enumerate(df_pdf.iterrows(), start=1):
+            status = str(linha.get("Status", "")).strip().upper()
+
+            if status == "SEM ESTOQUE":
+                estilos_tabela.append(("BACKGROUND", (indice_status, indice_linha), (indice_status, indice_linha), colors.HexColor("#7f1d1d")))
+                estilos_tabela.append(("TEXTCOLOR", (indice_status, indice_linha), (indice_status, indice_linha), colors.white))
+            elif status == "ACABANDO":
+                estilos_tabela.append(("BACKGROUND", (indice_status, indice_linha), (indice_status, indice_linha), colors.HexColor("#854d0e")))
+                estilos_tabela.append(("TEXTCOLOR", (indice_status, indice_linha), (indice_status, indice_linha), colors.white))
+            elif status == "OK":
+                estilos_tabela.append(("BACKGROUND", (indice_status, indice_linha), (indice_status, indice_linha), colors.HexColor("#14532d")))
+                estilos_tabela.append(("TEXTCOLOR", (indice_status, indice_linha), (indice_status, indice_linha), colors.white))
+
+    tabela.setStyle(TableStyle(estilos_tabela))
+    elementos.append(tabela)
+
+    doc.build(elementos)
+    buffer.seek(0)
+
+    return buffer.getvalue()
 
 
 def enviar_para_apps_script(payload):
@@ -2405,6 +2576,20 @@ try:
         st.caption(f"Produtos encontrados: {len(consulta)}")
 
         consulta_exibir = consulta[colunas_exibir].copy()
+
+        try:
+            pdf_consulta = gerar_pdf_consulta_estoque(consulta_exibir, filtros)
+            st.download_button(
+                "Baixar PDF do estoque",
+                data=pdf_consulta,
+                file_name=f"consulta_estoque_{datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%Y%m%d_%H%M%S')}.pdf",
+                mime="application/pdf",
+                use_container_width=False
+            )
+        except ModuleNotFoundError:
+            st.warning(
+                "Para baixar a consulta em PDF, adicione `reportlab` no requirements.txt."
+            )
 
         consulta_exibir["status"] = (
             consulta_exibir["status"]
