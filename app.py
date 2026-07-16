@@ -3035,7 +3035,7 @@ try:
                 st.markdown("### Produtos extras da saída")
                 st.caption(
                     "Adicione quantos produtos extras forem necessários. "
-                    "Use o botão de + da tabela para criar novas linhas. Se o produto já existir na saída, a quantidade será somada."
+                    "Use as linhas em branco da tabela. Se o produto já existir na saída, a quantidade será somada."
                 )
 
                 produtos_extras_rascunho = []
@@ -3054,14 +3054,18 @@ try:
                         "Quantidade": quantidade_extra_rascunho
                     })
 
-                if not produtos_extras_rascunho:
-                    produtos_extras_rascunho = [{"Produto": "", "Quantidade": 0}]
+                # Evita bug visual do Streamlit/React no data_editor com SelectboxColumn + num_rows="dynamic".
+                # Em vez do botão de +, deixamos algumas linhas vazias fixas para produtos extras.
+                quantidade_linhas_extras = max(8, len(produtos_extras_rascunho) + 3)
+
+                while len(produtos_extras_rascunho) < quantidade_linhas_extras:
+                    produtos_extras_rascunho.append({"Produto": "", "Quantidade": 0})
 
                 df_extras_editor = st.data_editor(
                     pd.DataFrame(produtos_extras_rascunho),
                     use_container_width=True,
                     hide_index=True,
-                    num_rows="dynamic",
+                    num_rows="fixed",
                     column_config={
                         "Produto": st.column_config.SelectboxColumn(
                             "Produto",
