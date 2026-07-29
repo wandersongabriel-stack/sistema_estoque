@@ -132,6 +132,7 @@ PERMISSOES_POR_PERFIL = {
         "Consulta de Estoque",
         "Entrada de Produtos",
         "Avaria",
+        "Alteração de Estoque",
         "Saída de Produtos",
         "Cadastro de Produtos",
         "Edição de Produtos",
@@ -142,6 +143,7 @@ PERMISSOES_POR_PERFIL = {
         "Consulta de Estoque",
         "Entrada de Produtos",
         "Avaria",
+        "Alteração de Estoque",
         "Cadastro de Produtos",
         "Edição de Produtos",
         "Consulta de Kits",
@@ -149,6 +151,7 @@ PERMISSOES_POR_PERFIL = {
     ],
     "saida": [
         "Consulta de Estoque",
+        "Alteração de Estoque",
         "Saída de Produtos",
         "Consulta de Kits",
         "Histórico",
@@ -260,12 +263,14 @@ def sair_do_sistema():
         "confirmar_cadastro",
         "confirmar_edicao",
         "confirmar_saida",
+        "confirmar_alteracao_estoque",
         "erro_confirmar_saida",
         "erro_saida_form",
         "rascunho_saida",
         "entrada_processando",
         "avaria_processando",
         "saida_processando",
+        "alteracao_estoque_processando",
         "simulacao_saida",
         "cadastro_processando",
         "edicao_processando",
@@ -1449,6 +1454,9 @@ if "confirmar_cancelamento_saida" not in st.session_state:
 if "confirmar_saida" not in st.session_state:
     st.session_state["confirmar_saida"] = None
 
+if "confirmar_alteracao_estoque" not in st.session_state:
+    st.session_state["confirmar_alteracao_estoque"] = None
+
 if "erro_confirmar_saida" not in st.session_state:
     st.session_state["erro_confirmar_saida"] = None
 
@@ -1466,6 +1474,9 @@ if "avaria_processando" not in st.session_state:
 
 if "saida_processando" not in st.session_state:
     st.session_state["saida_processando"] = None
+
+if "alteracao_estoque_processando" not in st.session_state:
+    st.session_state["alteracao_estoque_processando"] = None
 
 if "simulacao_saida" not in st.session_state:
     st.session_state["simulacao_saida"] = None
@@ -1499,6 +1510,9 @@ if "reset_cadastro" not in st.session_state:
 
 if "reset_edicao" not in st.session_state:
     st.session_state["reset_edicao"] = 0
+
+if "reset_alteracao_estoque" not in st.session_state:
+    st.session_state["reset_alteracao_estoque"] = 0
 
 if "reset_historico" not in st.session_state:
     st.session_state["reset_historico"] = 0
@@ -1742,6 +1756,65 @@ if st.session_state["edicao_processando"] is not None:
     st.stop()
 
 
+# PROCESSAMENTO DE ALTERAÇÃO DE ESTOQUE
+if st.session_state["alteracao_estoque_processando"] is not None:
+    bloquear_cliques_interface()
+
+    alteracao = st.session_state["alteracao_estoque_processando"]
+
+    st.divider()
+    st.subheader("Processando alteração de estoque")
+
+    try:
+        estoque_atual = float(alteracao["estoque_atual"])
+        nova_quantidade = float(alteracao["nova_quantidade"])
+        diferenca = nova_quantidade - estoque_atual
+
+        if diferenca == 0:
+            raise Exception("A nova quantidade é igual ao estoque atual.")
+
+        if diferenca > 0:
+            tipo_movimentacao = "AJUSTE_ENTRADA"
+            quantidade_ajuste = diferenca
+            descricao_ajuste = "entrada"
+        else:
+            tipo_movimentacao = "AJUSTE_SAIDA"
+            quantidade_ajuste = abs(diferenca)
+            descricao_ajuste = "saída"
+
+        observacao = (
+            "Alteração de estoque - "
+            f"Usuário: {st.session_state.get('usuario', '')}. "
+            f"Estoque anterior: {formatar_numero_exibicao(estoque_atual)}. "
+            f"Novo estoque: {formatar_numero_exibicao(nova_quantidade)}. "
+            f"Ajuste: {descricao_ajuste} de {formatar_numero_exibicao(quantidade_ajuste)}. "
+            f"Motivo: {alteracao['observacao']}"
+        )
+
+        with st.spinner("Alterando estoque. Aguarde..."):
+            registrar_movimentacao(
+                codigo_produto=alteracao["codigo_produto"],
+                tipo=tipo_movimentacao,
+                quantidade=quantidade_ajuste,
+                pedido="ALTERACAO_ESTOQUE",
+                observacao=observacao
+            )
+
+        st.session_state["mensagem_sucesso"] = "Estoque alterado com sucesso."
+        st.session_state["reset_alteracao_estoque"] += 1
+
+    except Exception as e:
+        st.session_state["mensagem_erro"] = f"Erro ao alterar estoque: {e}"
+
+    finally:
+        st.session_state["alteracao_estoque_processando"] = None
+        st.session_state["bloqueado"] = False
+        st.session_state["menu_principal"] = "Alteração de Estoque"
+        st.rerun()
+
+    st.stop()
+
+
 # PROCESSAMENTO DE EXCLUSÃO DE ENTRADA PELO HISTÓRICO
 if st.session_state["exclusao_entrada_processando"] is not None:
     bloquear_cliques_interface()
@@ -1819,6 +1892,61 @@ if st.session_state["cancelamento_processando"] is not None:
     finally:
         st.session_state["cancelamento_processando"] = None
         st.session_state["bloqueado"] = False
+        st.rerun()
+
+    st.stop()
+
+
+
+# CONFIRMAÇÃO DE ALTERAÇÃO DE ESTOQUE
+if st.session_state["confirmar_alteracao_estoque"] is not None:
+    alteracao = st.session_state["confirmar_alteracao_estoque"]
+
+    st.divider()
+    st.subheader("Confirmação de alteração de estoque")
+
+    st.info("Revise as informações abaixo antes de confirmar a alteração do estoque.")
+
+    diferenca = float(alteracao["nova_quantidade"]) - float(alteracao["estoque_atual"])
+
+    st.write(f"**Produto:** {alteracao['produto_nome']}")
+    st.write(f"**Estoque atual:** {formatar_numero_exibicao(alteracao['estoque_atual'])}")
+    st.write(f"**Nova quantidade:** {formatar_numero_exibicao(alteracao['nova_quantidade'])}")
+
+    if diferenca > 0:
+        st.write(f"**Ajuste:** Entrada de {formatar_numero_exibicao(abs(diferenca))}")
+    else:
+        st.write(f"**Ajuste:** Saída de {formatar_numero_exibicao(abs(diferenca))}")
+
+    st.write(f"**Motivo/observação:** {alteracao['observacao']}")
+
+    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
+
+    with col_confirmar:
+        confirmar = st.button(
+            "Confirmar",
+            type="primary",
+            disabled=st.session_state["bloqueado"]
+        )
+
+    with col_cancelar:
+        cancelar = st.button(
+            "Cancelar",
+            disabled=st.session_state["bloqueado"]
+        )
+
+    if confirmar and not st.session_state["bloqueado"]:
+        st.session_state["bloqueado"] = True
+        st.session_state["alteracao_estoque_processando"] = alteracao
+        st.session_state["confirmar_alteracao_estoque"] = None
+        st.rerun()
+
+    if cancelar and not st.session_state["bloqueado"]:
+        st.session_state["bloqueado"] = True
+        st.session_state["cancelamento_processando"] = {
+            "chave_confirmacao": "confirmar_alteracao_estoque",
+            "destino": "Alteração de Estoque"
+        }
         st.rerun()
 
     st.stop()
@@ -2445,6 +2573,8 @@ try:
             botao_menu("Entrada de Produtos")
         if usuario_tem_acesso("Avaria"):
             botao_menu("Avaria")
+        if usuario_tem_acesso("Alteração de Estoque"):
+            botao_menu("Alteração de Estoque")
         if usuario_tem_acesso("Saída de Produtos"):
             botao_menu("Saída de Produtos")
 
@@ -2621,6 +2751,124 @@ try:
             use_container_width=True,
             hide_index=True
         )
+
+
+    elif aba_atual == "Alteração de Estoque":
+        st.subheader("Alteração de Estoque")
+
+        st.caption(
+            "Use esta tela para ajustar a quantidade atual de um produto após conferência física do estoque. "
+            "O ajuste será registrado no histórico como AJUSTE_ENTRADA ou AJUSTE_SAIDA."
+        )
+
+        produtos_ativos = produtos[produtos["ativo"].astype(str).str.upper() == "SIM"].copy()
+
+        if produtos_ativos.empty:
+            st.warning("Nenhum produto ativo encontrado.")
+        else:
+            produtos_ativos["produto_opcao"] = (
+                produtos_ativos["codigo"].astype(str) + " - " + produtos_ativos["nome"].astype(str)
+            )
+
+            opcoes_produtos_alteracao = [""] + produtos_ativos["produto_opcao"].dropna().astype(str).tolist()
+            produtos_lookup_alteracao = produtos_ativos.copy()
+            produtos_lookup_alteracao["codigo"] = produtos_lookup_alteracao["codigo"].astype(str)
+
+            produto_selecionado = st.selectbox(
+                "Produto",
+                opcoes_produtos_alteracao,
+                key=f"produto_alteracao_estoque_{st.session_state['reset_alteracao_estoque']}"
+            )
+
+            produto_linha = pd.DataFrame()
+            estoque_atual = 0.0
+            unidade_produto = ""
+            status_produto = ""
+            codigo_produto = ""
+            produto_nome = ""
+
+            if produto_selecionado:
+                codigo_produto = produto_selecionado.split(" - ")[0]
+                produto_nome = produto_selecionado.split(" - ", 1)[1] if " - " in produto_selecionado else produto_selecionado
+                produto_linha = produtos_lookup_alteracao[
+                    produtos_lookup_alteracao["codigo"] == str(codigo_produto)
+                ]
+
+                if not produto_linha.empty:
+                    linha_produto = produto_linha.iloc[0]
+                    estoque_atual = float(linha_produto.get("estoque_atual", 0) or 0)
+                    unidade_produto = str(linha_produto.get("unidade", "") or "")
+                    status_produto = str(linha_produto.get("status", "") or "").upper()
+
+                    col_estoque_atual, col_unidade, col_status = st.columns(3)
+
+                    with col_estoque_atual:
+                        st.metric("Estoque atual", formatar_numero_exibicao(estoque_atual))
+
+                    with col_unidade:
+                        st.metric("Unidade", unidade_produto or "-")
+
+                    with col_status:
+                        st.metric("Status", status_produto or "-")
+
+            if not produto_selecionado:
+                st.info("Selecione um produto para ver o estoque atual e informar a nova quantidade.")
+            elif produto_linha.empty:
+                st.warning("Produto selecionado não encontrado.")
+            else:
+                with st.form(f"form_alteracao_estoque_{st.session_state['reset_alteracao_estoque']}_{codigo_produto}"):
+                    nova_quantidade = st.number_input(
+                        "Nova quantidade em estoque",
+                        min_value=0.0,
+                        step=1.0,
+                        value=float(estoque_atual),
+                        key=f"nova_quantidade_alteracao_estoque_{st.session_state['reset_alteracao_estoque']}_{codigo_produto}"
+                    )
+
+                    observacao_alteracao = st.text_area(
+                        "Motivo/observação da alteração",
+                        placeholder="Ex: ajuste após contagem física, correção de lançamento, conferência manual...",
+                        key=f"observacao_alteracao_estoque_{st.session_state['reset_alteracao_estoque']}_{codigo_produto}"
+                    )
+
+                    diferenca_preview = float(nova_quantidade) - float(estoque_atual)
+
+                    if diferenca_preview > 0:
+                        st.info(f"Esta alteração vai adicionar {formatar_numero_exibicao(abs(diferenca_preview))} ao estoque.")
+                    elif diferenca_preview < 0:
+                        st.warning(f"Esta alteração vai retirar {formatar_numero_exibicao(abs(diferenca_preview))} do estoque.")
+                    else:
+                        st.info("A nova quantidade é igual ao estoque atual.")
+
+                    col_vazio_esq, col_centro, col_vazio_dir = st.columns([4, 1, 4])
+
+                    with col_centro:
+                        botao_alterar_estoque = st.form_submit_button("Alterar estoque")
+
+                if botao_alterar_estoque:
+                    observacao_alteracao = str(observacao_alteracao or "").strip()
+
+                    if nova_quantidade < 0:
+                        exibir_alerta_temporario("A nova quantidade não pode ser negativa.", tipo="error")
+                        st.stop()
+
+                    if float(nova_quantidade) == float(estoque_atual):
+                        exibir_alerta_temporario("A nova quantidade é igual ao estoque atual.", tipo="warning")
+                        st.stop()
+
+                    if not observacao_alteracao:
+                        exibir_alerta_temporario("Informe o motivo/observação da alteração.", tipo="error")
+                        st.stop()
+
+                    st.session_state["confirmar_alteracao_estoque"] = {
+                        "codigo_produto": codigo_produto,
+                        "produto_nome": produto_nome,
+                        "estoque_atual": estoque_atual,
+                        "nova_quantidade": float(nova_quantidade),
+                        "observacao": observacao_alteracao
+                    }
+
+                    st.rerun()
 
     elif aba_atual == "Entrada de Produtos":
         st.subheader("Entrada de Produtos")
