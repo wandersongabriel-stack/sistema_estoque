@@ -2843,7 +2843,13 @@ try:
         produtos_ativos_saida["produto_opcao"] = (
             produtos_ativos_saida["codigo"].astype(str) + " - " + produtos_ativos_saida["nome"].astype(str)
         )
-        opcoes_produtos_saida = [""] + produtos_ativos_saida["produto_opcao"].tolist()
+        opcoes_produtos_saida = (
+            produtos_ativos_saida["produto_opcao"]
+            .dropna()
+            .astype(str)
+            .drop_duplicates()
+            .tolist()
+        )
 
         def formatar_nome_kit_saida(nome_kit):
             nome_kit = str(nome_kit or "").strip()
@@ -2888,7 +2894,9 @@ try:
                 "nome": nome_produto_opcao
             }
 
-        opcoes_itens_saida_outros = [""] + opcoes_kits_saida + produtos_ativos_saida["produto_opcao"].tolist()
+        opcoes_itens_saida_outros = list(dict.fromkeys(
+            opcoes_kits_saida + produtos_ativos_saida["produto_opcao"].dropna().astype(str).tolist()
+        ))
 
         rascunho_saida = st.session_state.get("rascunho_saida") or {}
 
@@ -2968,11 +2976,15 @@ try:
                         "Observação": observacao_rascunho
                     })
 
-                if not itens_outros_rascunho:
-                    itens_outros_rascunho = [{"Produto": "", "Quantidade": 0, "Observação": ""}]
+                # Mantém o botão de + do data_editor, mas sem criar uma linha em branco manualmente.
+                # Isso evita o erro visual do React/Streamlit ao combinar linha vazia + SelectboxColumn + num_rows="dynamic".
+                df_itens_outros_base = pd.DataFrame(
+                    itens_outros_rascunho,
+                    columns=["Produto", "Quantidade", "Observação"]
+                )
 
                 df_itens_outros_editor = st.data_editor(
-                    pd.DataFrame(itens_outros_rascunho),
+                    df_itens_outros_base,
                     use_container_width=True,
                     hide_index=True,
                     num_rows="dynamic",
@@ -3054,11 +3066,15 @@ try:
                         "Quantidade": quantidade_extra_rascunho
                     })
 
-                if not produtos_extras_rascunho:
-                    produtos_extras_rascunho = [{"Produto": "", "Quantidade": 0}]
+                # Mantém o botão de + do data_editor, mas sem criar uma linha em branco manualmente.
+                # Isso evita o erro visual do React/Streamlit ao combinar linha vazia + SelectboxColumn + num_rows="dynamic".
+                df_extras_base = pd.DataFrame(
+                    produtos_extras_rascunho,
+                    columns=["Produto", "Quantidade"]
+                )
 
                 df_extras_editor = st.data_editor(
-                    pd.DataFrame(produtos_extras_rascunho),
+                    df_extras_base,
                     use_container_width=True,
                     hide_index=True,
                     num_rows="dynamic",
