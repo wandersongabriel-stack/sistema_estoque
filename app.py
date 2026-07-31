@@ -132,6 +132,7 @@ PERMISSOES_POR_PERFIL = {
         "Consulta de Estoque",
         "Entrada de Produtos",
         "Avaria",
+        "Alteração de Estoque",
         "Saída de Produtos",
         "Cadastro de Produtos",
         "Edição de Produtos",
@@ -142,6 +143,7 @@ PERMISSOES_POR_PERFIL = {
         "Consulta de Estoque",
         "Entrada de Produtos",
         "Avaria",
+        "Alteração de Estoque",
         "Cadastro de Produtos",
         "Edição de Produtos",
         "Consulta de Kits",
@@ -149,6 +151,7 @@ PERMISSOES_POR_PERFIL = {
     ],
     "saida": [
         "Consulta de Estoque",
+        "Alteração de Estoque",
         "Saída de Produtos",
         "Consulta de Kits",
         "Histórico",
@@ -260,13 +263,16 @@ def sair_do_sistema():
         "confirmar_cadastro",
         "confirmar_edicao",
         "confirmar_saida",
+        "confirmar_alteracao_estoque",
         "erro_confirmar_saida",
         "erro_saida_form",
         "rascunho_saida",
         "entrada_processando",
         "avaria_processando",
         "saida_processando",
+        "alteracao_estoque_processando",
         "simulacao_saida",
+        "reset_alteracao_estoque",
         "cadastro_processando",
         "edicao_processando",
         "confirmar_exclusao_entrada",
@@ -1449,6 +1455,9 @@ if "confirmar_cancelamento_saida" not in st.session_state:
 if "confirmar_saida" not in st.session_state:
     st.session_state["confirmar_saida"] = None
 
+if "confirmar_alteracao_estoque" not in st.session_state:
+    st.session_state["confirmar_alteracao_estoque"] = None
+
 if "erro_confirmar_saida" not in st.session_state:
     st.session_state["erro_confirmar_saida"] = None
 
@@ -1466,6 +1475,9 @@ if "avaria_processando" not in st.session_state:
 
 if "saida_processando" not in st.session_state:
     st.session_state["saida_processando"] = None
+
+if "alteracao_estoque_processando" not in st.session_state:
+    st.session_state["alteracao_estoque_processando"] = None
 
 if "simulacao_saida" not in st.session_state:
     st.session_state["simulacao_saida"] = None
@@ -1493,6 +1505,9 @@ if "reset_avaria" not in st.session_state:
 
 if "reset_saida" not in st.session_state:
     st.session_state["reset_saida"] = 0
+
+if "reset_alteracao_estoque" not in st.session_state:
+    st.session_state["reset_alteracao_estoque"] = 0
 
 if "reset_cadastro" not in st.session_state:
     st.session_state["reset_cadastro"] = 0
@@ -1626,6 +1641,55 @@ if st.session_state["avaria_processando"] is not None:
         st.session_state["avaria_processando"] = None
         st.session_state["bloqueado"] = False
         st.session_state["menu_principal"] = "Avaria"
+        st.rerun()
+
+    st.stop()
+
+
+# PROCESSAMENTO DE ALTERAÇÃO DE ESTOQUE
+if st.session_state["alteracao_estoque_processando"] is not None:
+    bloquear_cliques_interface()
+
+    alteracao_estoque = st.session_state["alteracao_estoque_processando"]
+
+    st.divider()
+    st.subheader("Processando alteração de estoque")
+
+    try:
+        with st.spinner("Registrando alteração de estoque. Aguarde..."):
+            motivo = str(alteracao_estoque.get("motivo", "")).strip()
+
+            for item_alteracao in alteracao_estoque.get("itens", []):
+                observacao_ajuste = (
+                    f"ALTERAÇÃO DE ESTOQUE - {motivo}. "
+                    f"Estoque anterior: {formatar_numero_exibicao(item_alteracao['estoque_atual'])}. "
+                    f"Nova quantidade: {formatar_numero_exibicao(item_alteracao['nova_quantidade'])}."
+                )
+
+                registrar_movimentacao(
+                    codigo_produto=item_alteracao["codigo_produto"],
+                    tipo=item_alteracao["tipo_ajuste"],
+                    quantidade=item_alteracao["quantidade_ajuste"],
+                    pedido="ALTERACAO_ESTOQUE",
+                    observacao=observacao_ajuste
+                )
+
+        quantidade_itens = len(alteracao_estoque.get("itens") or [])
+
+        if quantidade_itens > 1:
+            st.session_state["mensagem_sucesso"] = f"{quantidade_itens} alterações de estoque registradas."
+        else:
+            st.session_state["mensagem_sucesso"] = "Alteração de estoque registrada."
+
+        st.session_state["reset_alteracao_estoque"] += 1
+
+    except Exception as e:
+        st.session_state["mensagem_erro"] = f"Erro ao registrar alteração de estoque: {e}"
+
+    finally:
+        st.session_state["alteracao_estoque_processando"] = None
+        st.session_state["bloqueado"] = False
+        st.session_state["menu_principal"] = "Alteração de Estoque"
         st.rerun()
 
     st.stop()
@@ -1991,6 +2055,79 @@ if st.session_state["confirmar_avaria"] is not None:
         st.session_state["cancelamento_processando"] = {
             "chave_confirmacao": "confirmar_avaria",
             "destino": "Avaria"
+        }
+        st.rerun()
+
+    st.stop()
+
+
+# CONFIRMAÇÃO DE ALTERAÇÃO DE ESTOQUE
+if st.session_state["confirmar_alteracao_estoque"] is not None:
+    alteracao_estoque = st.session_state["confirmar_alteracao_estoque"]
+
+    st.divider()
+    st.subheader("Confirmação de alteração de estoque")
+
+    st.info("Revise as informações abaixo antes de confirmar a alteração do estoque.")
+
+    st.write(f"**Motivo da alteração:** {alteracao_estoque['motivo']}")
+
+    itens_alteracao = alteracao_estoque.get("itens", [])
+    df_confirmacao_alteracao = pd.DataFrame(itens_alteracao)
+
+    if df_confirmacao_alteracao.empty:
+        st.warning("Nenhum item encontrado para esta alteração.")
+    else:
+        df_confirmacao_alteracao = df_confirmacao_alteracao.rename(columns={
+            "codigo_produto": "Código do Produto",
+            "produto_nome": "Produto",
+            "estoque_atual": "Estoque Atual",
+            "nova_quantidade": "Nova Quantidade",
+            "ajuste_texto": "Ajuste",
+            "quantidade_ajuste": "Quantidade do Ajuste"
+        })
+
+        df_confirmacao_alteracao = formatar_colunas_numericas_exibicao(
+            df_confirmacao_alteracao,
+            ["Estoque Atual", "Nova Quantidade", "Quantidade do Ajuste"]
+        )
+
+        tabela_alteracao = df_confirmacao_alteracao[
+            ["Código do Produto", "Produto", "Estoque Atual", "Nova Quantidade", "Ajuste", "Quantidade do Ajuste"]
+        ]
+
+        st.dataframe(
+            tabela_alteracao,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    col_vazio_esq, col_confirmar, col_cancelar, col_vazio_dir = st.columns([3, 1, 1, 3])
+
+    with col_confirmar:
+        confirmar = st.button(
+            "Confirmar",
+            type="primary",
+            disabled=st.session_state["bloqueado"] or df_confirmacao_alteracao.empty
+        )
+
+    with col_cancelar:
+        cancelar = st.button(
+            "Cancelar",
+            disabled=st.session_state["bloqueado"]
+        )
+
+    if confirmar and not st.session_state["bloqueado"]:
+        st.session_state["bloqueado"] = True
+        st.session_state["alteracao_estoque_processando"] = alteracao_estoque
+        st.session_state["confirmar_alteracao_estoque"] = None
+        st.rerun()
+
+    if cancelar and not st.session_state["bloqueado"]:
+        st.session_state["bloqueado"] = True
+        st.session_state["cancelamento_processando"] = {
+            "chave_confirmacao": "confirmar_alteracao_estoque",
+            "destino": "Alteração de Estoque"
         }
         st.rerun()
 
@@ -2445,6 +2582,8 @@ try:
             botao_menu("Entrada de Produtos")
         if usuario_tem_acesso("Avaria"):
             botao_menu("Avaria")
+        if usuario_tem_acesso("Alteração de Estoque"):
+            botao_menu("Alteração de Estoque")
         if usuario_tem_acesso("Saída de Produtos"):
             botao_menu("Saída de Produtos")
 
@@ -2834,6 +2973,171 @@ try:
                 }
 
                 st.rerun()
+
+
+    elif aba_atual == "Alteração de Estoque":
+        st.subheader("Alteração de Estoque")
+
+        produtos_ativos = produtos[produtos["ativo"].astype(str).str.upper() == "SIM"].copy()
+
+        if produtos_ativos.empty:
+            st.warning("Nenhum produto ativo encontrado.")
+        else:
+            produtos_ativos["codigo"] = produtos_ativos["codigo"].apply(normalizar_codigo)
+            produtos_ativos["estoque_atual"] = pd.to_numeric(
+                produtos_ativos["estoque_atual"],
+                errors="coerce"
+            ).fillna(0)
+
+            opcoes_produtos_alteracao = [""]
+            mapa_produtos_alteracao = {}
+
+            for _, produto_linha in produtos_ativos.iterrows():
+                codigo_produto = str(produto_linha.get("codigo", "")).strip()
+                nome_produto = str(produto_linha.get("nome", "") or "").strip()
+                unidade_produto = str(produto_linha.get("unidade", "") or "").strip()
+                estoque_atual = float(produto_linha.get("estoque_atual", 0) or 0)
+
+                estoque_texto = formatar_numero_exibicao(estoque_atual)
+                unidade_texto = f" {unidade_produto}" if unidade_produto else ""
+                opcao_produto = f"{codigo_produto} - {nome_produto} | Estoque atual: {estoque_texto}{unidade_texto}"
+
+                opcoes_produtos_alteracao.append(opcao_produto)
+                mapa_produtos_alteracao[opcao_produto] = {
+                    "codigo_produto": codigo_produto,
+                    "produto_nome": nome_produto,
+                    "unidade": unidade_produto,
+                    "estoque_atual": estoque_atual
+                }
+
+            with st.form(f"form_alteracao_estoque_{st.session_state['reset_alteracao_estoque']}"):
+                st.caption(
+                    "Use esta tela para ajustar a quantidade atual de produtos após conferência física do estoque. "
+                    "O motivo é obrigatório e será gravado na observação das movimentações."
+                )
+
+                motivo_alteracao = st.text_area(
+                    "Motivo da alteração",
+                    placeholder="Ex: ajuste após contagem física, correção de lançamento, conferência manual...",
+                    key=f"motivo_alteracao_estoque_{st.session_state['reset_alteracao_estoque']}"
+                )
+
+                df_alteracao_editor = st.data_editor(
+                    pd.DataFrame([{"Produto": "", "Nova quantidade": 0}]),
+                    use_container_width=True,
+                    hide_index=True,
+                    num_rows="dynamic",
+                    column_config={
+                        "Produto": st.column_config.SelectboxColumn(
+                            "Produto",
+                            options=opcoes_produtos_alteracao,
+                            required=False
+                        ),
+                        "Nova quantidade": st.column_config.NumberColumn(
+                            "Nova quantidade",
+                            min_value=0,
+                            step=1,
+                            default=0,
+                            format="%d",
+                            required=False
+                        )
+                    },
+                    key=f"alteracao_estoque_editor_{st.session_state['reset_alteracao_estoque']}"
+                )
+
+                col_vazio_esq, col_centro, col_vazio_dir = st.columns([4, 1, 4])
+
+                with col_centro:
+                    botao_alteracao_estoque = st.form_submit_button("Registrar alteração")
+
+            if botao_alteracao_estoque:
+                motivo_alteracao = str(motivo_alteracao or "").strip()
+
+                if not motivo_alteracao:
+                    exibir_alerta_temporario("Informe o motivo da alteração.", tipo="error")
+                    st.stop()
+
+                itens_alteracao = []
+                produtos_informados = set()
+
+                if df_alteracao_editor is not None and not df_alteracao_editor.empty:
+                    for _, linha_alteracao in df_alteracao_editor.iterrows():
+                        produto_alteracao = str(linha_alteracao.get("Produto", "") or "").strip()
+                        nova_quantidade = linha_alteracao.get("Nova quantidade", 0)
+
+                        try:
+                            nova_quantidade = float(nova_quantidade or 0)
+                        except Exception:
+                            nova_quantidade = 0
+
+                        if not produto_alteracao and nova_quantidade <= 0:
+                            continue
+
+                        if not produto_alteracao:
+                            exibir_alerta_temporario("Selecione o produto em todas as linhas preenchidas.", tipo="error")
+                            st.stop()
+
+                        if nova_quantidade < 0:
+                            exibir_alerta_temporario("A nova quantidade não pode ser negativa.", tipo="error")
+                            st.stop()
+
+                        if not float(nova_quantidade).is_integer():
+                            exibir_alerta_temporario("Informe apenas quantidades inteiras.", tipo="error")
+                            st.stop()
+
+                        produto_info = mapa_produtos_alteracao.get(produto_alteracao)
+
+                        if not produto_info:
+                            exibir_alerta_temporario("Produto selecionado não encontrado.", tipo="error")
+                            st.stop()
+
+                        codigo_produto = produto_info["codigo_produto"]
+
+                        if codigo_produto in produtos_informados:
+                            exibir_alerta_temporario("O mesmo produto foi informado mais de uma vez. Deixe apenas uma linha por produto.", tipo="error")
+                            st.stop()
+
+                        produtos_informados.add(codigo_produto)
+
+                        estoque_atual = float(produto_info.get("estoque_atual", 0) or 0)
+                        diferenca = float(nova_quantidade) - estoque_atual
+
+                        if diferenca == 0:
+                            continue
+
+                        if diferenca > 0:
+                            tipo_ajuste = "AJUSTE_ENTRADA"
+                            ajuste_texto = f"Entrada de {formatar_numero_exibicao(abs(diferenca))}"
+                        else:
+                            tipo_ajuste = "AJUSTE_SAIDA"
+                            ajuste_texto = f"Saída de {formatar_numero_exibicao(abs(diferenca))}"
+
+                        quantidade_ajuste = abs(diferenca)
+
+                        if float(quantidade_ajuste).is_integer():
+                            quantidade_ajuste = int(quantidade_ajuste)
+
+                        itens_alteracao.append({
+                            "codigo_produto": codigo_produto,
+                            "produto_nome": produto_info["produto_nome"],
+                            "estoque_atual": int(estoque_atual) if float(estoque_atual).is_integer() else estoque_atual,
+                            "nova_quantidade": int(nova_quantidade),
+                            "tipo_ajuste": tipo_ajuste,
+                            "ajuste_texto": ajuste_texto,
+                            "quantidade_ajuste": quantidade_ajuste
+                        })
+
+                if not itens_alteracao:
+                    exibir_alerta_temporario("Informe pelo menos uma alteração com quantidade diferente do estoque atual.", tipo="error")
+                    st.stop()
+
+                st.session_state["confirmar_alteracao_estoque"] = {
+                    "motivo": motivo_alteracao,
+                    "itens": itens_alteracao
+                }
+
+                st.rerun()
+
 
 
     elif aba_atual == "Saída de Produtos":
