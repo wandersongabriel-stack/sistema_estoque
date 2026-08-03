@@ -702,10 +702,10 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
             },
             {
                 "chave": "expositor_busto",
-                "grupo": "Expositor busto",
-                "codigos": ["21"],
+                "grupo": "Expositor busto P",
+                "codigos": ["34"],
                 "padrao": 2,
-                "quantidades_por_unidade": {"21": 1}
+                "quantidades_por_unidade": {"34": 1}
             },
             {
                 "chave": "expositor_abaulado",
@@ -716,7 +716,7 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
             },
             {
                 "chave": "expositor_anel",
-                "grupo": "Expositor anel",
+                "grupo": "Expositor anel G",
                 "codigos": ["26"],
                 "padrao": 2,
                 "quantidades_por_unidade": {"26": 1}
@@ -872,7 +872,7 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
         },
         {
             "chave": "expositor_busto",
-            "grupo": "Expositor busto",
+            "grupo": "Expositor busto G",
             "codigos": ["21"],
             "padrao": 1,
             "quantidades_por_unidade": {"21": 1}
@@ -886,7 +886,7 @@ def obter_definicoes_checklist(tipo_saida, tipo_monzi):
         },
         {
             "chave": "expositor_anel",
-            "grupo": "Expositor anel",
+            "grupo": "Expositor anel G",
             "codigos": ["26"],
             "padrao": 1,
             "quantidades_por_unidade": {"26": 1}
