@@ -4082,7 +4082,6 @@ try:
                 ascending=[False, False],
                 na_position="last"
             )
-            .drop(columns=["_data_ordenacao", "_id_ordenacao"])
         )
 
         historico_exibir = historico.rename(columns={
@@ -4136,7 +4135,11 @@ try:
             if entradas.empty:
                 st.info("Nenhuma entrada ativa encontrada para exclusão.")
             else:
-                entradas = entradas.sort_values("criado_em", ascending=False)
+                entradas = entradas.sort_values(
+                    by=["_data_ordenacao", "_id_ordenacao"],
+                    ascending=[False, False],
+                    na_position="last"
+                )
 
                 entradas["opcao_exclusao"] = entradas.apply(
                     lambda row: (
@@ -4206,22 +4209,39 @@ try:
                 saidas["pedido"] = saidas["pedido"].astype(str)
                 saidas["tipo"] = saidas["tipo"].astype(str).str.upper()
 
+                datas_resumo_saidas = (
+                    saidas
+                    .sort_values(
+                        by=["_data_ordenacao", "_id_ordenacao"],
+                        ascending=[False, False],
+                        na_position="last"
+                    )
+                    .drop_duplicates(["pedido", "tipo"])
+                    [["pedido", "tipo", "criado_em"]]
+                    .rename(columns={"criado_em": "data"})
+                )
+
                 resumo_saidas = (
                     saidas
                     .groupby(["pedido", "tipo"], as_index=False)
                     .agg({
                         "id": "count",
                         "quantidade": "sum",
-                        "criado_em": "max"
+                        "_data_ordenacao": "max",
+                        "_id_ordenacao": "max"
                     })
                     .rename(columns={
                         "id": "itens",
-                        "quantidade": "quantidade_total",
-                        "criado_em": "data"
+                        "quantidade": "quantidade_total"
                     })
+                    .merge(datas_resumo_saidas, on=["pedido", "tipo"], how="left")
                 )
 
-                resumo_saidas = resumo_saidas.sort_values("data", ascending=False)
+                resumo_saidas = resumo_saidas.sort_values(
+                    by=["_data_ordenacao", "_id_ordenacao"],
+                    ascending=[False, False],
+                    na_position="last"
+                )
 
                 resumo_saidas["opcao_cancelamento"] = resumo_saidas.apply(
                     lambda row: (
